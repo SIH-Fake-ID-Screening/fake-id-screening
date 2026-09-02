@@ -2,6 +2,8 @@ venv/
 .env
 __pycache__/
 uploads/
+uploads/students/
+uploads/screening/
 *.pyc
 .venv/
 ai/face/*.jpeg

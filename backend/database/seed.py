@@ -17,7 +17,7 @@ When to use
 Guidelines for real data
 ------------------------
 * Keep one dict per physical ID card.
-* Set photo_path to the relative path of the scanned / cropped reference photo,
+* Set front_image_path to the relative path of the scanned / cropped reference photo,
   e.g.  "uploads/reference_photos/STU2024001.jpg"
 * Do NOT store the actual image bytes in the database.
 * Set status to "active" for valid cards and "expired" / "suspended" as needed.
@@ -37,7 +37,7 @@ from database.connection import SessionLocal, create_tables
 from database.models import Student
 
 # ---------------------------------------------------------------------------
-# SAMPLE DATA — replace these dicts with your real authorized records.
+# SAMPLE DATA — dummy development records (fictional).
 # ---------------------------------------------------------------------------
 SAMPLE_STUDENTS = [
     {
@@ -47,7 +47,7 @@ SAMPLE_STUDENTS = [
         "college": "IIT Bombay",
         "course": "B.Tech Computer Science",
         "valid_till": date(2026, 5, 31),
-        "photo_path": "uploads/reference_photos/STU2024001.jpg",
+        "front_image_path": "uploads/reference_photos/STU2024001.jpg",
         "status": "active",
         "blacklisted": False,
     },
@@ -58,7 +58,7 @@ SAMPLE_STUDENTS = [
         "college": "NIT Trichy",
         "course": "B.Tech Electronics",
         "valid_till": date(2025, 5, 31),
-        "photo_path": "uploads/reference_photos/STU2024002.jpg",
+        "front_image_path": "uploads/reference_photos/STU2024002.jpg",
         "status": "active",
         "blacklisted": False,
     },
@@ -69,7 +69,7 @@ SAMPLE_STUDENTS = [
         "college": "BITS Pilani",
         "course": "B.E. Mechanical",
         "valid_till": date(2027, 5, 31),
-        "photo_path": "uploads/reference_photos/STU2024003.jpg",
+        "front_image_path": "uploads/reference_photos/STU2024003.jpg",
         "status": "active",
         "blacklisted": False,
     },
@@ -80,7 +80,7 @@ SAMPLE_STUDENTS = [
         "college": "DTU Delhi",
         "course": "B.Tech Civil",
         "valid_till": date(2026, 5, 31),
-        "photo_path": "uploads/reference_photos/STU2024004.jpg",
+        "front_image_path": "uploads/reference_photos/STU2024004.jpg",
         "status": "active",
         "blacklisted": False,
     },
@@ -91,7 +91,7 @@ SAMPLE_STUDENTS = [
         "college": "VIT Vellore",
         "course": "B.Tech Information Technology",
         "valid_till": date(2024, 5, 31),
-        "photo_path": "uploads/reference_photos/STU2024005.jpg",
+        "front_image_path": "uploads/reference_photos/STU2024005.jpg",
         "status": "expired",
         "blacklisted": False,
     },
@@ -102,7 +102,7 @@ SAMPLE_STUDENTS = [
         "college": "SRM Chennai",
         "course": "B.Tech Biotechnology",
         "valid_till": date(2025, 5, 31),
-        "photo_path": "uploads/reference_photos/STU2024006.jpg",
+        "front_image_path": "uploads/reference_photos/STU2024006.jpg",
         "status": "active",
         "blacklisted": False,
     },
@@ -113,7 +113,7 @@ SAMPLE_STUDENTS = [
         "college": "JNTU Hyderabad",
         "course": "M.Tech Data Science",
         "valid_till": date(2025, 5, 31),
-        "photo_path": "uploads/reference_photos/STU2024007.jpg",
+        "front_image_path": "uploads/reference_photos/STU2024007.jpg",
         "status": "suspended",
         "blacklisted": True,          # flagged as blacklisted for demo purposes
     },
@@ -124,7 +124,7 @@ SAMPLE_STUDENTS = [
         "college": "Anna University",
         "course": "B.E. Electrical",
         "valid_till": date(2027, 5, 31),
-        "photo_path": "uploads/reference_photos/STU2024008.jpg",
+        "front_image_path": "uploads/reference_photos/STU2024008.jpg",
         "status": "active",
         "blacklisted": False,
     },
@@ -135,7 +135,7 @@ SAMPLE_STUDENTS = [
         "college": "Pune University",
         "course": "B.Tech Chemical",
         "valid_till": date(2026, 5, 31),
-        "photo_path": "uploads/reference_photos/STU2024009.jpg",
+        "front_image_path": "uploads/reference_photos/STU2024009.jpg",
         "status": "active",
         "blacklisted": False,
     },
@@ -146,7 +146,50 @@ SAMPLE_STUDENTS = [
         "college": "Manipal University",
         "course": "B.Pharm",
         "valid_till": date(2025, 5, 31),
-        "photo_path": "uploads/reference_photos/STU2024010.jpg",
+        "front_image_path": "uploads/reference_photos/STU2024010.jpg",
+        "status": "active",
+        "blacklisted": False,
+    },
+]
+
+# ---------------------------------------------------------------------------
+# REAL STUDENTS -- actual authorized KIET ID card records.
+# Image paths are relative to the backend/ directory.
+# ---------------------------------------------------------------------------
+REAL_STUDENTS = [
+    {
+        "student_id": "202501100600212",
+        "name": "Priyanshu Ranjan",
+        "dob": date(2005, 12, 27),
+        "college": "KIET Group of Institutions",
+        "course": "B.Tech IT",
+        "valid_till": date(2029, 7, 31),
+        "front_image_path": "uploads/students/202501100600212/front.jpeg",
+        "back_image_path": "uploads/students/202501100600212/back.jpeg",
+        "status": "active",
+        "blacklisted": False,
+    },
+    {
+        "student_id": "202501100600070",
+        "name": "Hemant Rao",
+        "dob": date(2007, 7, 14),
+        "college": "KIET Group of Institutions",
+        "course": "B.Tech IT",
+        "valid_till": date(2029, 7, 31),
+        "front_image_path": "uploads/students/202501100600070/front.jpeg",
+        "back_image_path": "uploads/students/202501100600070/back.jpeg",
+        "status": "active",
+        "blacklisted": False,
+    },
+    {
+        "student_id": "202501100400016",
+        "name": "Abhinay Kushwaha",
+        "dob": date(2006, 9, 1),
+        "college": "KIET Group of Institutions",
+        "course": "B.Tech CSE(AIML)",
+        "valid_till": date(2029, 7, 31),
+        "front_image_path": "uploads/students/202501100400016/front.jpeg",
+        "back_image_path": "uploads/students/202501100400016/back.jpeg",
         "status": "active",
         "blacklisted": False,
     },
@@ -158,13 +201,8 @@ SAMPLE_STUDENTS = [
 
 def seed_database(clear_existing: bool = False) -> None:
     """
-    Insert SAMPLE_STUDENTS into the database.
-
-    Parameters
-    ----------
-    clear_existing : If True, deletes all existing rows before inserting.
-                     Useful for a clean reset during development.
-                     NEVER set this to True in production.
+    Insert SAMPLE_STUDENTS and REAL_STUDENTS into the database.
+    Existing records are skipped (upsert by student_id).
     """
     create_tables()          # Ensure tables exist before inserting rows.
 
@@ -178,15 +216,17 @@ def seed_database(clear_existing: bool = False) -> None:
         inserted = 0
         skipped = 0
 
-        for record in SAMPLE_STUDENTS:
-            # Skip records whose student_id already exists.
+        for record in SAMPLE_STUDENTS + REAL_STUDENTS:
+            # Upsert: skip if student_id already exists.
             existing = (
                 db.query(Student)
                 .filter(Student.student_id == record["student_id"])
                 .first()
             )
             if existing:
-                print(f"⏭️   Skipping {record['student_id']} — already exists.")
+                # Update image paths in case they changed
+                existing.front_image_path = record.get("front_image_path", existing.front_image_path)
+                existing.back_image_path = record.get("back_image_path", existing.back_image_path)
                 skipped += 1
                 continue
 
@@ -195,14 +235,15 @@ def seed_database(clear_existing: bool = False) -> None:
             inserted += 1
 
         db.commit()
+        total = len(SAMPLE_STUDENTS) + len(REAL_STUDENTS)
         print(
-            f"\n✅  Seed complete: {inserted} inserted, {skipped} skipped "
-            f"(total records in SAMPLE_STUDENTS: {len(SAMPLE_STUDENTS)})."
+            f"\nSeed complete: {inserted} inserted, {skipped} skipped "
+            f"(total records: {total})."
         )
 
     except Exception as exc:
         db.rollback()
-        print(f"❌  Seed failed: {exc}")
+        print(f"[FAIL] Seed failed: {exc}")
         raise
     finally:
         db.close()

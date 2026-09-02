@@ -4,7 +4,7 @@ database/models.py
 SQLAlchemy ORM model for the `students` table.
 
 Each row represents one authorized / genuine college ID card.
-photo_path stores only the filesystem path to the student's photo;
+front_image_path and back_image_path store only the filesystem path to the student's photo;
 no binary image data is kept in the database.
 """
 
@@ -29,7 +29,8 @@ class Student(Base):
     college     : Name of the issuing college / institution.
     course      : Programme / branch of study.
     valid_till  : Expiry date printed on the ID card.
-    photo_path  : Relative or absolute path to the student's photo on disk.
+    front_image_path: Relative or absolute path to the student's front ID photo on disk.
+    back_image_path : Relative or absolute path to the student's back ID photo on disk.
     status      : Current status, e.g. "active", "expired", "suspended".
     blacklisted : True if the student has been blacklisted.
     created_at  : Row creation timestamp (set automatically).
@@ -56,8 +57,9 @@ class Student(Base):
     course = Column(String(255), nullable=True)
     valid_till = Column(Date, nullable=True)
 
-    # Path to the reference photo stored on the filesystem (not inside the DB).
-    photo_path = Column(Text, nullable=True)
+    # Paths to the reference photos stored on the filesystem (not inside the DB).
+    front_image_path = Column(Text, nullable=True)
+    back_image_path = Column(Text, nullable=True)
 
     # Operational fields
     status = Column(String(50), nullable=False, default="active")
