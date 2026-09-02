@@ -1,0 +1,14 @@
+# Python virtual environment
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Face verification test images
+ai/face/*.jpeg
+ai/face/*.jpg
+ai/face/*.png
+
+# InsightFace model cache
+.insightface/
