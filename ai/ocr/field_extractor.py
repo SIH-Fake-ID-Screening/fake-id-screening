@@ -90,33 +90,53 @@ class FieldExtractor:
             if len(cleaned_id) >= 3:
                 return cleaned_id, conf
 
-        # Method B: Regex pattern scan across all boxes
-        id_pattern = re.compile(r'\b([A-Z0-9]{4,16})\b', re.IGNORECASE)
+        # Method B: Standalone long numeric/alphanumeric string (e.g. 202501100600212)
+        # First scan for 8-16 digit pure numbers
         for b in boxes:
             text = b.text.strip()
-            if any(kw in text.upper() for kw in ["COLLEGE", "UNIVERSITY", "STUDENT", "VALID", "NAME", "EXPIRY"]):
+            if re.match(r'^\d{8,16}$', text):
+                return text, b.confidence
+
+        # Next scan for alphanumeric pattern
+        id_pattern = re.compile(r'\b([A-Z0-9]{5,16})\b', re.IGNORECASE)
+        for b in boxes:
+            text = b.text.strip()
+            if any(kw in text.upper() for kw in ["COLLEGE", "UNIVERSITY", "STUDENT", "VALID", "NAME", "EXPIRY", "AUTONOMOUS", "INSTITUTE"]):
                 continue
             matches = id_pattern.findall(text)
             for m in matches:
-                if any(c.isdigit() for c in m) and len(m) >= 4:
+                # Avoid matching isolated 4-digit years like 2025 or 2029
+                if len(m) == 4 and m.isdigit() and (1990 <= int(m) <= 2035):
+                    continue
+                if any(c.isdigit() for c in m) and len(m) >= 5:
                     return m.upper(), b.confidence
 
         return None, 0.0
 
     def _extract_name(self, boxes: List[BoundingBox], lines: List[str]) -> Tuple[Optional[str], float]:
         """Extract cardholder full name using keyword association or line heuristics."""
+        ignore_words = ["COLLEGE", "UNIVERSITY", "ENGINEERING", "STUDENT", "IDENTITY", "CARD", "AUTONOMOUS", "INSTITUTE", "GRADE", "LEARNING", "REGISTRAR", "BLOOD", "GROUP", "ADDRESS"]
+
         # Method A: Keyword match (e.g. "NAME: ALEX MORGAN")
         val, conf = self._extract_keyword_value(boxes, self.NAME_KEYWORDS)
         if val:
             cleaned = clean_text_field(val)
             if cleaned and len(cleaned) >= 2 and not any(c.isdigit() for c in cleaned):
-                return cleaned.upper(), conf
+                if not any(kw in cleaned.upper() for kw in ignore_words):
+                    return cleaned.upper(), conf
 
-        # Method B: Heuristic scan for capitalized words
+        # Method B: Heuristic scan for ALL CAPS full name (e.g. PRIYANSHU RANJAN)
+        for b in boxes:
+            text = b.text.strip()
+            if text.isupper() and len(text.split()) in [2, 3] and not any(c.isdigit() for c in text):
+                if not any(kw in text.upper() for kw in ignore_words):
+                    return text, b.confidence
+
+        # Method C: Title case name
         name_regex = re.compile(r'^[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3}$')
         for b in boxes:
             text = b.text.strip()
-            if name_regex.match(text) and not any(kw in text.upper() for kw in ["COLLEGE", "UNIVERSITY", "ENGINEERING", "STUDENT", "IDENTITY", "CARD"]):
+            if name_regex.match(text) and not any(kw in text.upper() for kw in ignore_words):
                 return text.upper(), b.confidence
 
         return None, 0.0

@@ -18,7 +18,7 @@ except ImportError:
 if HAS_PYDANTIC:
     class ExtractedFields(BaseModel):
         """
-        Standardized key-value fields extracted from the ID/document image.
+        Standardized key-value fields extracted from the college ID/document image.
         Matches backend/database models (Student model fields) and downstream pipelines.
         """
         student_id: Optional[str] = Field(default=None, description="College-issued student ID or card identifier")
@@ -28,10 +28,7 @@ if HAS_PYDANTIC:
         course: Optional[str] = Field(default=None, description="Degree or branch of study")
         valid_till: Optional[str] = Field(default=None, description="Expiry/validity date in YYYY-MM-DD format")
         document_number: Optional[str] = Field(default=None, description="Generic document or card number")
-        nationality: Optional[str] = Field(default=None, description="Nationality if present on document")
-        passport_number: Optional[str] = Field(default=None, description="Passport number if passport document")
         expiry_date: Optional[str] = Field(default=None, description="Same as valid_till in YYYY-MM-DD format")
-        visa_info: Optional[str] = Field(default=None, description="Visa information if applicable")
 
     class ConfidenceScores(BaseModel):
         """Overall and per-field OCR confidence metrics."""
@@ -68,10 +65,7 @@ else:
         course: Optional[str] = None
         valid_till: Optional[str] = None
         document_number: Optional[str] = None
-        nationality: Optional[str] = None
-        passport_number: Optional[str] = None
         expiry_date: Optional[str] = None
-        visa_info: Optional[str] = None
 
     @dataclass
     class ConfidenceScores:

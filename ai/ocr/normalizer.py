@@ -31,14 +31,15 @@ def normalize_date(raw_date_str: Optional[str]) -> Optional[str]:
     cleaned = re.sub(r'[^\w\s\-\/\.]', ' ', cleaned)
     cleaned = re.sub(r'\s+', ' ', cleaned).strip()
 
-    # Exact date string formats to test
+    # Date formats to try
     formats = [
         "%Y-%m-%d", "%Y/%m/%d", "%Y.%m.%d",
         "%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y",
         "%m/%d/%Y", "%m-%d-%Y",
         "%d %b %Y", "%d %B %Y",
         "%b %d %Y", "%B %d %Y",
-        "%d-%b-%Y", "%d-%B-%Y"
+        "%d-%b-%Y", "%d-%B-%Y",
+        "%B %Y", "%b %Y"
     ]
 
     for fmt in formats:
