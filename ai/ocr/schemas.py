@@ -29,17 +29,35 @@ if HAS_PYDANTIC:
         valid_till: Optional[str] = Field(default=None, description="Expiry/validity date in YYYY-MM-DD format")
         document_number: Optional[str] = Field(default=None, description="Generic document or card number")
         expiry_date: Optional[str] = Field(default=None, description="Same as valid_till in YYYY-MM-DD format")
+        passport_number: Optional[str] = Field(default=None, description="Passport number (letter + 7 digits)")
+        nationality: Optional[str] = Field(default=None, description="Nationality or citizenship")
+        visa_info: Optional[str] = Field(default=None, description="Visa type or visa number")
+
+        def to_dict(self) -> Dict[str, Any]:
+            if hasattr(self, "model_dump"):
+                return self.model_dump()
+            return self.dict()
 
     class ConfidenceScores(BaseModel):
         """Overall and per-field OCR confidence metrics."""
         overall: float = Field(default=0.0, description="Average OCR confidence across all detected text regions")
         field_scores: Dict[str, float] = Field(default_factory=dict, description="Confidence per extracted field")
 
+        def to_dict(self) -> Dict[str, Any]:
+            if hasattr(self, "model_dump"):
+                return self.model_dump()
+            return self.dict()
+
     class BoundingBox(BaseModel):
         """Single OCR text bounding box detection result."""
         text: str = Field(..., description="Recognized text string")
         confidence: float = Field(..., description="Recognition confidence (0.0 to 1.0)")
         box: List[List[float]] = Field(..., description="Bounding box polygon [[x1, y1], [x2, y2], [x3, y3], [x4, y4]]")
+
+        def to_dict(self) -> Dict[str, Any]:
+            if hasattr(self, "model_dump"):
+                return self.model_dump()
+            return self.dict()
 
     class OCRResult(BaseModel):
         """
@@ -52,8 +70,10 @@ if HAS_PYDANTIC:
         bounding_boxes: List[BoundingBox] = Field(default_factory=list, description="All detected text bounding boxes")
 
         def to_dict(self) -> Dict[str, Any]:
-            """Convert schema to dictionary representation."""
-            return self.model_dump()
+            """Convert schema to dictionary representation (pydantic v1 and v2 compatible)."""
+            if hasattr(self, "model_dump"):
+                return self.model_dump()
+            return self.dict()
 
 else:
     @dataclass
@@ -66,17 +86,29 @@ else:
         valid_till: Optional[str] = None
         document_number: Optional[str] = None
         expiry_date: Optional[str] = None
+        passport_number: Optional[str] = None
+        nationality: Optional[str] = None
+        visa_info: Optional[str] = None
+
+        def to_dict(self) -> Dict[str, Any]:
+            return asdict(self)
 
     @dataclass
     class ConfidenceScores:
         overall: float = 0.0
         field_scores: Dict[str, float] = field(default_factory=dict)
 
+        def to_dict(self) -> Dict[str, Any]:
+            return asdict(self)
+
     @dataclass
     class BoundingBox:
         text: str
         confidence: float
         box: List[List[float]]
+
+        def to_dict(self) -> Dict[str, Any]:
+            return asdict(self)
 
     @dataclass
     class OCRResult:

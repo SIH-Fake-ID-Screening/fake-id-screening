@@ -7,7 +7,7 @@ adaptive thresholding, and deskewing. Safe fallback included.
 """
 
 import logging
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Union
 from PIL import Image
 import numpy as np
 
@@ -21,7 +21,7 @@ except ImportError:
     logger.warning("opencv-python (cv2) not found in environment. Image preprocessing will use PIL fallbacks.")
 
 
-def preprocess_image(image_path_or_array: str | np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+def preprocess_image(image_path_or_array: Union[str, np.ndarray]) -> Tuple[np.ndarray, np.ndarray]:
     """
     Load an image and generate preprocessed variations optimized for OCR.
 

@@ -8,7 +8,7 @@ runs field extraction, and compiles output schema.
 
 import os
 import logging
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Union
 import numpy as np
 
 from .preprocessing import preprocess_image
@@ -119,8 +119,64 @@ class OCRProcessor:
         )
 
 
-def extract_ocr_data(image_path: str) -> Dict[str, Any]:
-    """Public helper function executing OCR and returning dictionary output."""
+def _to_contract_dict(fields) -> Dict[str, str]:
+    """
+    Map ExtractedFields to the public OCR output contract.
+
+    Contract:
+      { student_id, name, dob, course, valid_till }
+
+    All missing values are returned as "" (empty string), never None.
+    """
+    def _str(val) -> str:
+        return val if val is not None else ""
+
+    return {
+        "student_id": _str(fields.student_id),
+        "name":       _str(fields.name),
+        "dob":        _str(fields.dob),
+        "course":     _str(fields.course),
+        "valid_till": _str(fields.valid_till),
+    }
+
+
+def extract_document(image_path: Union[str, List[str]]) -> Dict[str, str]:
+    """
+    Public OCR interface.
+
+    Accepts a single image path or a list of paths (e.g. front and back sides of an ID card).
+    Processes image(s) and returns strictly the OCR contract dictionary:
+
+    {
+        "student_id": "...",   # "" if not found
+        "name":       "...",   # "" if not found
+        "dob":        "...",   # YYYY-MM-DD or "" if not found
+        "course":     "...",   # "" if not found
+        "valid_till": "...",   # YYYY-MM-DD / YYYY-MM-01 or "" if not found
+    }
+
+    DOB and valid_till are always strictly independent fields.
+    """
+    if isinstance(image_path, (list, tuple)):
+        combined = {
+            "student_id": "",
+            "name": "",
+            "dob": "",
+            "course": "",
+            "valid_till": "",
+        }
+        for path in image_path:
+            res = extract_document(path)
+            for k in combined:
+                if not combined[k] and res.get(k):
+                    combined[k] = res[k]
+        return combined
+
     processor = OCRProcessor()
     result = processor.process_image(image_path)
-    return result.to_dict()
+    return _to_contract_dict(result.fields)
+
+
+# Backward-compatible alias
+extract_ocr_data = extract_document
+
