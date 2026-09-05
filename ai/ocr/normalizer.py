@@ -39,6 +39,7 @@ def normalize_date(raw_date_str: Optional[str]) -> Optional[str]:
         "%d %b %Y", "%d %B %Y",
         "%b %d %Y", "%B %d %Y",
         "%d-%b-%Y", "%d-%B-%Y",
+        "%d %m %Y", "%m %d %Y", "%Y %m %d",  # space-separated numeric formats
         "%B %Y", "%b %Y"
     ]
 

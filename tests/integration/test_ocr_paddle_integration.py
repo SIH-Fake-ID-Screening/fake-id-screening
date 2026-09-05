@@ -75,13 +75,21 @@ class TestPaddleOCRIntegration(unittest.TestCase):
         pil_img = create_synthetic_id_card()
         img_path = self._save_img(pil_img)
 
-        result = extract_document(img_path)
+        # 1. Verify internal processor output has raw_text, fields, confidence, bounding_boxes
+        ocr_result = processor.process_image(img_path)
+        ocr_dict = ocr_result.to_dict()
+        self.assertIn("raw_text", ocr_dict)
+        self.assertIn("fields", ocr_dict)
+        self.assertIn("confidence", ocr_dict)
+        self.assertIn("bounding_boxes", ocr_dict)
 
+        # 2. Verify public extract_document contract has strictly the 5 required fields
+        result = extract_document(img_path)
         self.assertIsInstance(result, dict)
-        self.assertIn("raw_text", result)
-        self.assertIn("fields", result)
-        self.assertIn("confidence", result)
-        self.assertIn("bounding_boxes", result)
+        self.assertEqual(
+            set(result.keys()),
+            {"student_id", "name", "dob", "course", "valid_till"}
+        )
 
 
 if __name__ == "__main__":
