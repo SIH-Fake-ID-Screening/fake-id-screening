@@ -9,8 +9,8 @@ no binary image data is kept in the database.
 """
 
 from datetime import date, datetime
-from sqlalchemy import Boolean, Column, Date, DateTime, String, Text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Boolean, Column, Date, DateTime, String, Text, Float as db_Float
+from sqlalchemy.dialects.postgresql import UUID, JSONB as db_JSONB
 import uuid
 
 from database.connection import Base
@@ -100,3 +100,26 @@ def get_student_by_id(db, student_id: str):
         .filter(Student.student_id == student_id)
         .first()
     )
+
+
+class Screening(Base):
+    """
+    Represents a screening session result.
+    """
+    __tablename__ = "screenings"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, nullable=False)
+    screening_id = Column(String(36), unique=True, nullable=False, index=True)
+    student_id = Column(String(100), nullable=True, index=True)
+    status = Column(String(50), nullable=False)
+    risk_score = Column(db_Float, nullable=True)
+    risk_level = Column(String(50), nullable=True)
+    ocr_result = Column(db_JSONB, nullable=True)
+    db_verification_result = Column(db_JSONB, nullable=True)
+    face_result = Column(db_JSONB, nullable=True)
+    tampering_result = Column(db_JSONB, nullable=True)
+    validation_issues = Column(db_JSONB, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+
+    def __repr__(self) -> str:
+        return f"<Screening screening_id={self.screening_id!r} status={self.status!r}>"

@@ -170,6 +170,7 @@ class FieldExtractor:
         value, confidence = self._extract_date(
             boxes,
             self.DOB_KEYWORDS,
+            allow_generic=True
         )
 
         if value:
@@ -604,6 +605,7 @@ class FieldExtractor:
         self,
         boxes,
         keywords,
+        allow_generic=False
     ):
         normalized_keywords = [
             self._normalize_label(keyword)
@@ -675,7 +677,18 @@ class FieldExtractor:
                                 candidate_box.confidence,
                             )
 
-        # Never assign arbitrary dates to DOB.
+        if allow_generic:
+            date_pattern = re.compile(
+                r'\b(\d{1,4}[\/\-\.]\d{1,2}[\/\-\.]\d{1,4}|\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{2,4})\b',
+                re.IGNORECASE,
+            )
+            for b in boxes:
+                matches = date_pattern.findall(b.text)
+                for m in matches:
+                    norm = normalize_date(m)
+                    if norm:
+                        return norm, b.confidence
+
         return None, 0.0
 
     # =============================================================

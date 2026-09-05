@@ -39,7 +39,6 @@ class OCRProcessor:
                 ocr_version="PP-OCRv4",
                 lang="en",
                 use_angle_cls=True,
-                use_gpu=False,
                 show_log=False
             )
             logger.info("PaddleOCR engine initialized successfully.")

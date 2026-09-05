@@ -99,7 +99,8 @@ async def validate_and_save(upload: UploadFile, field_label: str) -> str:
 
     # 3. Content-Type header check
     content_type = (upload.content_type or "").lower()
-    if content_type not in ALLOWED_MIME_TYPES:
+    # Allow application/octet-stream as long as extension (checked above) and content (checked below) are valid
+    if content_type not in ALLOWED_MIME_TYPES and content_type != "application/octet-stream":
         raise HTTPException(
             status_code=400,
             detail=(
