@@ -3,7 +3,7 @@ ai/ocr/preprocessing.py
 ------------------------
 OpenCV & Pillow image preprocessing helper functions.
 Implements grayscale conversion, contrast enhancement, denoising,
-adaptive thresholding, and deskewing. Safe fallback included.
+adaptive thresholding, deskewing, and bottom ROI cropping for student ID digit enhancement.
 """
 
 import logging
@@ -43,7 +43,7 @@ def preprocess_image(image_path_or_array: str | np.ndarray) -> Tuple[np.ndarray,
         else:
             try:
                 pil_img = Image.open(image_path_or_array).convert("RGB")
-                img = np.array(pil_img)[:, :, ::-1]  # Convert RGB to BGR numpy array
+                img = np.array(pil_img)[:, :, ::-1]
             except Exception as exc:
                 raise FileNotFoundError(f"Could not load image file from path: {image_path_or_array}") from exc
     elif isinstance(image_path_or_array, np.ndarray):
@@ -87,10 +87,26 @@ def preprocess_image(image_path_or_array: str | np.ndarray) -> Tuple[np.ndarray,
         return original, original
 
 
+def crop_bottom_id_roi(img: np.ndarray) -> Optional[np.ndarray]:
+    """Crop and 2x upscale bottom 35% ROI region of ID card for crisp digit OCR."""
+    if not HAS_CV2 or img is None:
+        return None
+    try:
+        h, w = img.shape[:2]
+        bottom_crop = img[int(h * 0.65):h, 0:w]
+        # 2x upscale for sharp digit segmentation
+        upscaled = cv2.resize(bottom_crop, (w * 2, int(h * 0.35 * 2)), interpolation=cv2.INTER_CUBIC)
+        gray = cv2.cvtColor(upscaled, cv2.COLOR_BGR2GRAY)
+        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+        enhanced = clahe.apply(gray)
+        return cv2.cvtColor(enhanced, cv2.COLOR_GRAY2BGR)
+    except Exception:
+        return None
+
+
 def deskew_image(gray_img: np.ndarray) -> np.ndarray:
     """Detect and correct document skew up to +/- 45 degrees."""
     try:
-        # Find all foreground pixels via Otsu threshold
         _, thresh = cv2.threshold(gray_img, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
         coords = np.column_stack(np.where(thresh > 0))
 
@@ -103,7 +119,6 @@ def deskew_image(gray_img: np.ndarray) -> np.ndarray:
         else:
             angle = -angle
 
-        # If rotation is minimal (< 0.5 degrees or > 45 degrees), do not deskew
         if abs(angle) < 0.5 or abs(angle) > 45.0:
             return gray_img
 

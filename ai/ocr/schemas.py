@@ -19,21 +19,23 @@ if HAS_PYDANTIC:
     class ExtractedFields(BaseModel):
         """
         Standardized key-value fields extracted from the college ID/document image.
-        Matches backend/database models (Student model fields) and downstream pipelines.
+        Matches project OCR output contract.
         """
-        student_id: Optional[str] = Field(default=None, description="College-issued student ID or card identifier")
-        name: Optional[str] = Field(default=None, description="Full name of cardholder")
-        dob: Optional[str] = Field(default=None, description="Date of birth in YYYY-MM-DD format")
-        college: Optional[str] = Field(default=None, description="Issuing college/institution name")
-        course: Optional[str] = Field(default=None, description="Degree or branch of study")
-        valid_till: Optional[str] = Field(default=None, description="Expiry/validity date in YYYY-MM-DD format")
-        document_number: Optional[str] = Field(default=None, description="Generic document or card number")
-        expiry_date: Optional[str] = Field(default=None, description="Same as valid_till in YYYY-MM-DD format")
+        student_id: str = Field(default="", description="12-16 digit college-issued student ID or card identifier")
+        name: str = Field(default="", description="Full name of cardholder")
+        dob: str = Field(default="", description="Date of birth in YYYY-MM-DD format")
+        course: str = Field(default="", description="Degree or branch of study (e.g. B TECH IT)")
+        college: str = Field(default="", description="Issuing college/institution name (e.g. KIET Group of Institutions)")
+        valid_till: str = Field(default="", description="Expiry/validity date in YYYY-MM-DD format")
 
     class ConfidenceScores(BaseModel):
-        """Overall and per-field OCR confidence metrics."""
-        overall: float = Field(default=0.0, description="Average OCR confidence across all detected text regions")
-        field_scores: Dict[str, float] = Field(default_factory=dict, description="Confidence per extracted field")
+        """Per-field OCR confidence metrics."""
+        student_id: float = Field(default=0.0, description="Confidence score for student_id")
+        name: float = Field(default=0.0, description="Confidence score for name")
+        dob: float = Field(default=0.0, description="Confidence score for dob")
+        course: float = Field(default=0.0, description="Confidence score for course")
+        college: float = Field(default=0.0, description="Confidence score for college")
+        valid_till: float = Field(default=0.0, description="Confidence score for valid_till")
 
     class BoundingBox(BaseModel):
         """Single OCR text bounding box detection result."""
@@ -46,31 +48,49 @@ if HAS_PYDANTIC:
         Structured output returned by the OCR / Field Extraction engine.
         Passed downstream to validation, database, face, and risk services.
         """
-        raw_text: str = Field(default="", description="Complete concatenated raw text extracted from image")
-        fields: ExtractedFields = Field(default_factory=ExtractedFields, description="Extracted & normalized document fields")
-        confidence: ConfidenceScores = Field(default_factory=ConfidenceScores, description="OCR confidence metrics")
-        bounding_boxes: List[BoundingBox] = Field(default_factory=list, description="All detected text bounding boxes")
+        student_id: str = Field(default="")
+        name: str = Field(default="")
+        dob: str = Field(default="")
+        course: str = Field(default="")
+        college: str = Field(default="")
+        valid_till: str = Field(default="")
+        raw_text: str = Field(default="")
+        confidence: ConfidenceScores = Field(default_factory=ConfidenceScores)
+        bounding_boxes: List[BoundingBox] = Field(default_factory=list)
 
         def to_dict(self) -> Dict[str, Any]:
-            """Convert schema to dictionary representation."""
-            return self.model_dump()
+            """Convert schema to exact dictionary representation required by contract."""
+            d = self.model_dump()
+            return {
+                "student_id": d["student_id"],
+                "name": d["name"],
+                "dob": d["dob"],
+                "course": d["course"],
+                "college": d["college"],
+                "valid_till": d["valid_till"],
+                "raw_text": d["raw_text"],
+                "confidence": d["confidence"],
+                "bounding_boxes": d["bounding_boxes"]
+            }
 
 else:
     @dataclass
     class ExtractedFields:
-        student_id: Optional[str] = None
-        name: Optional[str] = None
-        dob: Optional[str] = None
-        college: Optional[str] = None
-        course: Optional[str] = None
-        valid_till: Optional[str] = None
-        document_number: Optional[str] = None
-        expiry_date: Optional[str] = None
+        student_id: str = ""
+        name: str = ""
+        dob: str = ""
+        course: str = ""
+        college: str = ""
+        valid_till: str = ""
 
     @dataclass
     class ConfidenceScores:
-        overall: float = 0.0
-        field_scores: Dict[str, float] = field(default_factory=dict)
+        student_id: float = 0.0
+        name: float = 0.0
+        dob: float = 0.0
+        course: float = 0.0
+        college: float = 0.0
+        valid_till: float = 0.0
 
     @dataclass
     class BoundingBox:
@@ -80,8 +100,13 @@ else:
 
     @dataclass
     class OCRResult:
+        student_id: str = ""
+        name: str = ""
+        dob: str = ""
+        course: str = ""
+        college: str = ""
+        valid_till: str = ""
         raw_text: str = ""
-        fields: ExtractedFields = field(default_factory=ExtractedFields)
         confidence: ConfidenceScores = field(default_factory=ConfidenceScores)
         bounding_boxes: List[BoundingBox] = field(default_factory=list)
 

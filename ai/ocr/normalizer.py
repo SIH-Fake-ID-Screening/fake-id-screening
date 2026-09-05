@@ -19,6 +19,7 @@ def normalize_date(raw_date_str: Optional[str]) -> Optional[str]:
     - 30/06/2026 / 30-06-2026 / 30.06.2026
     - 06/30/2026 / 06-30-2026
     - 30 JUN 2026 / 30 June 2026 / Jun 30, 2026
+    - July 2029 / Jul 2029 -> 2029-07-01
 
     Returns YYYY-MM-DD or None if unresolvable.
     """
@@ -26,23 +27,24 @@ def normalize_date(raw_date_str: Optional[str]) -> Optional[str]:
         return None
 
     cleaned = raw_date_str.strip()
+    # Strip contextual prefix keywords like "Card valid upto", "VALID TILL", "DOB", etc.
+    cleaned = re.sub(r'^(?:CARD\s+VALID\s+UPTO|VALID\s+UPTO|VALID\s+UP\s+TO|VALID\s+TILL|VALID\s+UNTIL|EXPIRY|D\.?O\.?B\.?|DATE\s+OF\s+BIRTH)[:\s]*', '', cleaned, flags=re.IGNORECASE)
     # Remove ordinal suffixes (1st, 2nd, 3rd, 4th)
     cleaned = re.sub(r'(\d+)(st|nd|rd|th)', r'\1', cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r'[^\w\s\-\/\.]', ' ', cleaned)
     cleaned = re.sub(r'\s+', ' ', cleaned).strip()
 
-    # Date formats to try
-    formats = [
+    # Exact date string formats to test (full day-month-year)
+    full_formats = [
         "%Y-%m-%d", "%Y/%m/%d", "%Y.%m.%d",
         "%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y",
         "%m/%d/%Y", "%m-%d-%Y",
         "%d %b %Y", "%d %B %Y",
         "%b %d %Y", "%B %d %Y",
-        "%d-%b-%Y", "%d-%B-%Y",
-        "%B %Y", "%b %Y"
+        "%d-%b-%Y", "%d-%B-%Y"
     ]
 
-    for fmt in formats:
+    for fmt in full_formats:
         try:
             dt = datetime.strptime(cleaned, fmt)
             if 1900 <= dt.year <= 2100:
@@ -50,14 +52,24 @@ def normalize_date(raw_date_str: Optional[str]) -> Optional[str]:
         except ValueError:
             continue
 
+    # Month-Year formats (e.g. "July 2029", "Jul 2029") -> YYYY-MM-01
+    month_year_formats = [
+        "%B %Y", "%b %Y", "%B-%Y", "%b-%Y", "%B/%Y", "%b/%Y"
+    ]
+    for fmt in month_year_formats:
+        try:
+            dt = datetime.strptime(cleaned, fmt)
+            if 1900 <= dt.year <= 2100:
+                return dt.strftime("%Y-%m-01")
+        except ValueError:
+            continue
+
     # Regex extraction fallback for embedded date substring (e.g. "DOB 14/05/2002")
     match = re.search(r'(\d{1,4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,4})', cleaned)
     if match:
         p1, p2, p3 = match.groups()
-        # Case 1: YYYY-MM-DD
         if len(p1) == 4:
             year, month, day = int(p1), int(p2), int(p3)
-        # Case 2: DD-MM-YYYY or MM-DD-YYYY
         elif len(p3) == 4:
             year = int(p3)
             if int(p1) > 12:
@@ -73,6 +85,18 @@ def normalize_date(raw_date_str: Optional[str]) -> Optional[str]:
                 return dt.strftime("%Y-%m-%d")
         except ValueError:
             return None
+
+    # Month Year regex fallback (e.g. "JULY 2029")
+    month_match = re.search(r'\b(JANUARY|FEBRUARY|MARCH|APRIL|MAY|JUNE|JULY|AUGUST|SEPTEMBER|OCTOBER|NOVEMBER|DECEMBER|JAN|FEB|MAR|APR|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\s+(\d{4})\b', cleaned, re.IGNORECASE)
+    if month_match:
+        m_str, y_str = month_match.groups()
+        for fmt in ["%B %Y", "%b %Y"]:
+            try:
+                dt = datetime.strptime(f"{m_str} {y_str}", fmt)
+                if 1900 <= dt.year <= 2100:
+                    return dt.strftime("%Y-%m-01")
+            except ValueError:
+                continue
 
     return None
 

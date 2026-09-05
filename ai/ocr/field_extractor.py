@@ -8,7 +8,7 @@ and spatial/bounding box heuristics.
 import re
 import logging
 from typing import List, Dict, Any, Optional, Tuple
-from .schemas import ExtractedFields, BoundingBox
+from .schemas import ExtractedFields, ConfidenceScores, BoundingBox
 from .normalizer import normalize_date, clean_text_field
 
 logger = logging.getLogger(__name__)
@@ -19,22 +19,28 @@ class FieldExtractor:
 
     STUDENT_ID_KEYWORDS = ["STUDENT ID", "STUDENT NO", "ID NO", "ROLL NO", "REG NO", "ENROLLMENT", "ID NUMBER", "DOCUMENT NO", "CARD NO"]
     NAME_KEYWORDS = ["NAME", "STUDENT NAME", "FULL NAME", "CARDHOLDER"]
-    DOB_KEYWORDS = ["DOB", "DATE OF BIRTH", "BIRTH DATE", "BORN"]
-    COLLEGE_KEYWORDS = ["COLLEGE", "INSTITUTE", "UNIVERSITY", "SCHOOL", "CAMPUS"]
+    DOB_KEYWORDS = ["DOB", "D.O.B", "DATE OF BIRTH", "BIRTH DATE", "BORN"]
+    COLLEGE_KEYWORDS = ["COLLEGE", "INSTITUTE", "UNIVERSITY", "SCHOOL", "CAMPUS", "GROUP OF INSTITUTIONS"]
     COURSE_KEYWORDS = ["COURSE", "BRANCH", "PROGRAM", "PROGRAMME", "CLASS", "DEGREE"]
-    VALIDITY_KEYWORDS = ["VALID TILL", "EXPIRY", "EXPIRY DATE", "VALID UNTIL", "EXPIRES"]
+    VALIDITY_KEYWORDS = ["VALID UPTO", "VALID UP TO", "VALID TILL", "VALID UNTIL", "CARD VALID UPTO", "EXPIRY", "EXPIRY DATE", "EXPIRES"]
 
-    def extract_fields(self, boxes: List[BoundingBox], raw_text: str) -> Tuple[ExtractedFields, Dict[str, float]]:
+    IGNORE_NAME_WORDS = [
+        "COLLEGE", "UNIVERSITY", "ENGINEERING", "STUDENT", "IDENTITY", "CARD", "AUTONOMOUS",
+        "INSTITUTE", "INSTITUTIONS", "GRADE", "LEARNING", "REGISTRAR", "BLOOD", "GROUP", "ADDRESS",
+        "DUPLICATE", "ROAD", "INDIA", "VALID", "UPTO", "TILL", "PAYMENT", "ISSUED", "CONNECTING", "NAAC"
+    ]
+
+    def extract_fields(self, boxes: List[BoundingBox], raw_text: str) -> Tuple[ExtractedFields, ConfidenceScores]:
         """
         Perform hybrid field extraction across bounding box text blocks.
 
         Returns
         -------
-        Tuple[ExtractedFields, Dict[str, float]]:
+        Tuple[ExtractedFields, ConfidenceScores]:
             (Extracted fields object, per-field confidence scores)
         """
         extracted = ExtractedFields()
-        field_scores: Dict[str, float] = {}
+        scores = ConfidenceScores()
 
         lines = [b.text.strip() for b in boxes if b.text.strip()]
         full_text_upper = raw_text.upper()
@@ -43,128 +49,170 @@ class FieldExtractor:
         id_val, id_conf = self._extract_student_id(boxes, lines)
         if id_val:
             extracted.student_id = id_val
-            extracted.document_number = id_val
-            field_scores["student_id"] = id_conf
-            field_scores["document_number"] = id_conf
+            scores.student_id = id_conf
 
         # 2. Extract Name
         name_val, name_conf = self._extract_name(boxes, lines)
         if name_val:
             extracted.name = name_val
-            field_scores["name"] = name_conf
+            scores.name = name_conf
 
         # 3. Extract DOB
-        dob_val, dob_conf = self._extract_date(boxes, self.DOB_KEYWORDS, full_text_upper)
+        dob_val, dob_conf = self._extract_dob(boxes, full_text_upper)
         if dob_val:
             extracted.dob = dob_val
-            field_scores["dob"] = dob_conf
+            scores.dob = dob_conf
 
         # 4. Extract Validity / Expiry Date
-        valid_val, valid_conf = self._extract_date(boxes, self.VALIDITY_KEYWORDS, full_text_upper)
+        valid_val, valid_conf = self._extract_validity(boxes, full_text_upper)
         if valid_val:
             extracted.valid_till = valid_val
-            extracted.expiry_date = valid_val
-            field_scores["valid_till"] = valid_conf
-            field_scores["expiry_date"] = valid_conf
+            scores.valid_till = valid_conf
 
         # 5. Extract College
-        college_val, college_conf = self._extract_keyword_value(boxes, self.COLLEGE_KEYWORDS)
+        college_val, college_conf = self._extract_college(boxes)
         if college_val:
             extracted.college = college_val
-            field_scores["college"] = college_conf
+            scores.college = college_conf
 
         # 6. Extract Course
-        course_val, course_conf = self._extract_keyword_value(boxes, self.COURSE_KEYWORDS)
+        course_val, course_conf = self._extract_course(boxes)
         if course_val:
             extracted.course = course_val
-            field_scores["course"] = course_conf
+            scores.course = course_conf
 
-        return extracted, field_scores
+        return extracted, scores
 
-    def _extract_student_id(self, boxes: List[BoundingBox], lines: List[str]) -> Tuple[Optional[str], float]:
-        """Extract student ID using label match or alphanumeric pattern regex."""
-        # Method A: Match near keyword
+    def _extract_student_id(self, boxes: List[BoundingBox], lines: List[str]) -> Tuple[str, float]:
+        """Extract 12-16 digit student ID number. Returns "" if not reliably found."""
+        # Method A: Match near keyword (e.g., "STUDENT ID: 202501100400016")
         val, conf = self._extract_keyword_value(boxes, self.STUDENT_ID_KEYWORDS)
         if val:
-            cleaned_id = re.sub(r'[^\w\-]', '', val)
-            if len(cleaned_id) >= 3:
+            cleaned_id = re.sub(r'[^\d]', '', val)
+            if 8 <= len(cleaned_id) <= 18:
                 return cleaned_id, conf
 
-        # Method B: Standalone long numeric/alphanumeric string (e.g. 202501100600212)
-        # First scan for 8-16 digit pure numbers
+        # Method B: Pure 10-16 digit string in standalone box (e.g. 202501100400016)
         for b in boxes:
-            text = b.text.strip()
-            if re.match(r'^\d{8,16}$', text):
-                return text, b.confidence
-
-        # Next scan for alphanumeric pattern
-        id_pattern = re.compile(r'\b([A-Z0-9]{5,16})\b', re.IGNORECASE)
-        for b in boxes:
-            text = b.text.strip()
-            if any(kw in text.upper() for kw in ["COLLEGE", "UNIVERSITY", "STUDENT", "VALID", "NAME", "EXPIRY", "AUTONOMOUS", "INSTITUTE"]):
-                continue
-            matches = id_pattern.findall(text)
-            for m in matches:
-                # Avoid matching isolated 4-digit years like 2025 or 2029
-                if len(m) == 4 and m.isdigit() and (1990 <= int(m) <= 2035):
+            text_digits = re.sub(r'[^\d]', '', b.text.strip())
+            if 10 <= len(text_digits) <= 18:
+                # Avoid matching phone numbers starting with 7/8/9 if 10 digits
+                if len(text_digits) == 10 and text_digits[0] in '789':
                     continue
-                if any(c.isdigit() for c in m) and len(m) >= 5:
-                    return m.upper(), b.confidence
+                return text_digits, b.confidence
 
-        return None, 0.0
+        # Method C: Regex pattern scan
+        for b in boxes:
+            text = b.text.strip()
+            if any(kw in text.upper() for kw in ["COLLEGE", "UNIVERSITY", "STUDENT", "VALID", "NAME", "EXPIRY", "AUTONOMOUS", "INSTITUTE", "ROAD"]):
+                continue
+            matches = re.findall(r'\b\d{10,18}\b', text)
+            for m in matches:
+                if len(m) == 10 and m[0] in '789':
+                    continue
+                return m, b.confidence
 
-    def _extract_name(self, boxes: List[BoundingBox], lines: List[str]) -> Tuple[Optional[str], float]:
-        """Extract cardholder full name using keyword association or line heuristics."""
-        ignore_words = ["COLLEGE", "UNIVERSITY", "ENGINEERING", "STUDENT", "IDENTITY", "CARD", "AUTONOMOUS", "INSTITUTE", "GRADE", "LEARNING", "REGISTRAR", "BLOOD", "GROUP", "ADDRESS"]
+        return "", 0.0
 
-        # Method A: Keyword match (e.g. "NAME: ALEX MORGAN")
+    def _extract_name(self, boxes: List[BoundingBox], lines: List[str]) -> Tuple[str, float]:
+        """Extract cardholder full name. Excludes institution headers."""
+        # Method A: Keyword match (e.g. "NAME: PRIYANSHU RANJAN")
         val, conf = self._extract_keyword_value(boxes, self.NAME_KEYWORDS)
         if val:
             cleaned = clean_text_field(val)
             if cleaned and len(cleaned) >= 2 and not any(c.isdigit() for c in cleaned):
-                if not any(kw in cleaned.upper() for kw in ignore_words):
+                if not any(kw in cleaned.upper() for kw in self.IGNORE_NAME_WORDS):
                     return cleaned.upper(), conf
 
-        # Method B: Heuristic scan for ALL CAPS full name (e.g. PRIYANSHU RANJAN)
+        # Method B: Line preceding S/O or D/O or W/O (e.g., line above "S/O VINOD KUMAR SINGH")
+        for i, b in enumerate(boxes):
+            text_upper = b.text.upper().strip()
+            if text_upper.startswith("S/O") or text_upper.startswith("D/O") or text_upper.startswith("W/O") or "SON OF" in text_upper:
+                if i > 0:
+                    prev_box = boxes[i - 1]
+                    prev_text = prev_box.text.strip()
+                    if prev_text.isupper() and len(prev_text.split()) in [2, 3] and not any(c.isdigit() for c in prev_text):
+                        if not any(kw in prev_text.upper() for kw in self.IGNORE_NAME_WORDS):
+                            return prev_text, prev_box.confidence
+
+        # Method C: ALL CAPS 2-3 word string situated in middle of card
         for b in boxes:
             text = b.text.strip()
             if text.isupper() and len(text.split()) in [2, 3] and not any(c.isdigit() for c in text):
-                if not any(kw in text.upper() for kw in ignore_words):
+                if not any(kw in text.upper() for kw in self.IGNORE_NAME_WORDS):
                     return text, b.confidence
 
-        # Method C: Title case name
-        name_regex = re.compile(r'^[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3}$')
+        return "", 0.0
+
+    def _extract_college(self, boxes: List[BoundingBox]) -> Tuple[str, float]:
+        """Extract institute/college name and format in proper Title Case."""
+        for b in boxes:
+            text_upper = b.text.upper().strip()
+            # Avoid websites or URLs
+            if "WWW." in text_upper or "HTTP" in text_upper or "@" in text_upper:
+                continue
+
+            if "KIET" in text_upper or "GROUP OF INSTITUTIONS" in text_upper:
+                return "KIET Group of Institutions", b.confidence
+            if "COLLEGE OF" in text_upper or "INSTITUTE OF" in text_upper or "UNIVERSITY" in text_upper:
+                # Format to Title Case
+                words = [w.capitalize() for w in b.text.strip().split()]
+                return " ".join(words), b.confidence
+
+        return "", 0.0
+
+    def _extract_course(self, boxes: List[BoundingBox]) -> Tuple[str, float]:
+        """Extract degree/branch (e.g. B TECH IT) without session years."""
+        course_pattern = re.compile(r'\b(B\s*\.?\s*TECH(?:\s*I\s*T|\s*C\s*S\s*E|\s+[A-Z]{2,4})?|M\s*\.?\s*TECH(?:\s+[A-Z]{2,4})?|BCA|MCA|MBA|BBA|B\s*\.?\s*SC|B\s*\.?\s*COM|DIPLOMA)\b', re.IGNORECASE)
+
         for b in boxes:
             text = b.text.strip()
-            if name_regex.match(text) and not any(kw in text.upper() for kw in ignore_words):
-                return text.upper(), b.confidence
+            # Separate degree letter from attached session years e.g. "2025-2029B" -> "B"
+            text_fixed = re.sub(r'20\d{2}\s*[\-\/]\s*20\d{2}\s*([A-Z])', r' \1', text, flags=re.IGNORECASE)
+            text_no_years = re.sub(r'\b20\d{2}\s*[\-\/]\s*20\d{2}\b', '', text_fixed).strip()
+            # Insert space before IT/CSE if attached to TECH e.g. TECHIT -> TECH IT
+            text_fixed_tech = re.sub(r'(TECH)(IT|CSE|ECE|ME|CE|EE)', r'\1 \2', text_no_years, flags=re.IGNORECASE)
+            match = course_pattern.search(text_fixed_tech)
+            if match:
+                matched_str = match.group(0).strip().upper()
+                matched_str = re.sub(r'\s+', ' ', matched_str)
+                return matched_str, b.confidence
 
-        return None, 0.0
+        return "", 0.0
 
-    def _extract_date(self, boxes: List[BoundingBox], keywords: List[str], full_text: str) -> Tuple[Optional[str], float]:
-        """Extract and normalize date associated with target keywords."""
+    def _extract_dob(self, boxes: List[BoundingBox], full_text: str) -> Tuple[str, float]:
+        """Extract Date of Birth strictly when explicit DOB context is present."""
         for b in boxes:
             upper = b.text.upper()
-            if any(kw in upper for kw in keywords):
+            if any(kw in upper for kw in self.DOB_KEYWORDS):
                 norm = normalize_date(b.text)
                 if norm:
                     return norm, b.confidence
 
-        val, conf = self._extract_keyword_value(boxes, keywords)
+        val, conf = self._extract_keyword_value(boxes, self.DOB_KEYWORDS)
         if val:
             norm = normalize_date(val)
             if norm:
                 return norm, conf
 
-        date_pattern = re.compile(r'\b(\d{1,4}[\/\-\.]\d{1,2}[\/\-\.]\d{1,4}|\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{2,4})\b', re.IGNORECASE)
+        return "", 0.0
+
+    def _extract_validity(self, boxes: List[BoundingBox], full_text: str) -> Tuple[str, float]:
+        """Extract validity/expiry date strictly when explicit validity context is present."""
         for b in boxes:
-            matches = date_pattern.findall(b.text)
-            for m in matches:
-                norm = normalize_date(m)
+            upper = b.text.upper()
+            if any(kw in upper for kw in self.VALIDITY_KEYWORDS):
+                norm = normalize_date(b.text)
                 if norm:
                     return norm, b.confidence
 
-        return None, 0.0
+        val, conf = self._extract_keyword_value(boxes, self.VALIDITY_KEYWORDS)
+        if val:
+            norm = normalize_date(val)
+            if norm:
+                return norm, conf
+
+        return "", 0.0
 
     def _extract_keyword_value(self, boxes: List[BoundingBox], keywords: List[str]) -> Tuple[Optional[str], float]:
         """Find value trailing or on the line following a keyword box."""
