@@ -1,0 +1,11 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+venv/
+
+# Runtime analysis outputs (regenerated per run)
+modules/tampering/results/
+
+# OS / editor noise
+.DS_Store
