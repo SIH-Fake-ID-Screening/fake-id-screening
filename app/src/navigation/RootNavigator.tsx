@@ -47,7 +47,12 @@ export function RootNavigator() {
       >
         <Stack.Screen name="Splash" component={SplashScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Home" component={HomeScreen} options={{ headerShown: false }} />
-        <Stack.Screen name="Capture" component={CaptureScreen} options={{ title: 'Capture' }} />
+        {/* The camera owns the full screen; cancel lives in the camera chrome. */}
+        <Stack.Screen
+          name="Capture"
+          component={CaptureScreen}
+          options={{ title: 'Capture', headerShown: false }}
+        />
         <Stack.Screen name="Review" component={ReviewScreen} options={{ title: 'Review' }} />
         <Stack.Screen
           name="Processing"

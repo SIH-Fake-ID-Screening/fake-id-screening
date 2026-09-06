@@ -1,6 +1,7 @@
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import { Image } from 'expo-image';
 
 import { Badge, Button, Card, Screen, Text } from '../components';
 import { CAPTURE_SLOTS } from '../constants/captureSlots';
@@ -11,8 +12,9 @@ import type { RootStackScreenProps } from '../navigation/types';
 /**
  * Final confirmation before anything is uploaded.
  *
- * MILESTONE 1: lists the three slots with their state and per-slot retake
- * actions. Image thumbnails are wired up once real captures exist (Milestone 3).
+ * Lists the three slots with their state, a thumbnail of the captured image
+ * and per-slot retake actions. Images come straight from `CaptureContext`
+ * (local cache URIs produced by the camera step) — nothing is uploaded here.
  */
 export function ReviewScreen({ navigation }: RootStackScreenProps<'Review'>) {
   const { captures, isComplete, completedCount } = useCaptures();
@@ -48,7 +50,7 @@ export function ReviewScreen({ navigation }: RootStackScreenProps<'Review'>) {
       <View style={styles.list}>
         {CAPTURE_SLOTS.map((meta) => {
           const capture = captures[meta.slot];
-          const captured = capture !== null;
+          const captured = capture !== null && capture.uri.length > 0;
 
           return (
             <Card key={meta.slot} style={styles.item}>
@@ -72,9 +74,19 @@ export function ReviewScreen({ navigation }: RootStackScreenProps<'Review'>) {
                   meta.guide === 'face' ? styles.thumbFace : styles.thumbCard,
                 ]}
               >
-                <Text variant="caption" tone="tertiary">
-                  {captured ? 'Preview available after camera step' : 'Not captured yet'}
-                </Text>
+                {captured && capture ? (
+                  <Image
+                    source={{ uri: capture.uri }}
+                    style={styles.thumbImage}
+                    contentFit="cover"
+                    transition={0}
+                    accessibilityLabel={`Captured photo of the ${meta.label}`}
+                  />
+                ) : (
+                  <Text variant="caption" tone="tertiary">
+                    Not captured yet
+                  </Text>
+                )}
               </View>
 
               <Button
@@ -127,5 +139,9 @@ const styles = StyleSheet.create({
   thumbFace: {
     width: '100%',
     aspectRatio: 1.2,
+  },
+  thumbImage: {
+    width: '100%',
+    height: '100%',
   },
 });

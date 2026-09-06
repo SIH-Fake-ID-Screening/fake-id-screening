@@ -78,6 +78,11 @@ export interface CapturedImage {
   mimeType: 'image/jpeg' | 'image/png';
   /** Byte size after preparation, when known. */
   sizeBytes?: number;
+  /**
+   * Which lens took the shot. UI-only: front-camera images are displayed
+   * mirrored so previews match what the user saw. Not sent to the backend.
+   */
+  facing?: 'front' | 'back';
   capturedAt: number;
 }
 

@@ -36,7 +36,9 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "VerifID uses the camera to capture your ID card and a live selfie for identity verification."
+          "cameraPermission": "VerifID uses the camera to capture your ID card and a live selfie for identity verification.",
+          "recordAudioAndroid": false,
+          "barcodeScannerEnabled": false
         }
       ]
     ]
