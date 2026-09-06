@@ -1,5 +1,17 @@
 import type { SemanticTone } from '../theme';
-import type { ScreeningResponse, ScreeningStatus } from '../types/screening';
+import type { CaptureSlot, ScreeningResponse, ScreeningStatus } from '../types/screening';
+
+/**
+ * The single recovery action offered for an outcome.
+ *
+ * `resubmit` sends the same three photos again (useful when the failure was
+ * server-side), `recapture` reopens the camera for the one photo that is
+ * actually implicated, and `restart` begins a whole new verification.
+ */
+export type RetryAction =
+  | { mode: 'resubmit'; label: string }
+  | { mode: 'recapture'; slot: CaptureSlot; label: string }
+  | { mode: 'restart'; label: string };
 
 /** How a screening outcome should be presented to the user. */
 export interface StatusPresentation {
@@ -17,11 +29,28 @@ export interface StatusPresentation {
   showStudentDetails: boolean;
   /** True when the face-verification panel is worth showing. */
   showFaceDetails: boolean;
-  /** True when retrying the capture flow could plausibly help. */
-  allowRetry: boolean;
+  /**
+   * The recovery action to offer, or `null` when retrying genuinely cannot
+   * help (blacklisted, inactive, expired, missing reference photo).
+   */
+  retry: RetryAction | null;
 }
 
-const PRESENTATIONS: Record<string, Omit<StatusPresentation, 'outcome'> & { outcome: StatusPresentation['outcome'] }> = {
+const RETAKE_SELFIE: RetryAction = {
+  mode: 'recapture',
+  slot: 'livePhoto',
+  label: 'Retake selfie',
+};
+
+const RETAKE_ID_FRONT: RetryAction = {
+  mode: 'recapture',
+  slot: 'documentFront',
+  label: 'Retake ID photos',
+};
+
+const RESUBMIT: RetryAction = { mode: 'resubmit', label: 'Try again' };
+
+const PRESENTATIONS: Record<string, StatusPresentation> = {
   student_not_found: {
     outcome: 'rejected',
     tone: 'danger',
@@ -33,7 +62,7 @@ const PRESENTATIONS: Record<string, Omit<StatusPresentation, 'outcome'> & { outc
       'Check that the correct ID card was photographed and that the ID number is fully visible, then try again.',
     showStudentDetails: false,
     showFaceDetails: false,
-    allowRetry: true,
+    retry: RETAKE_ID_FRONT,
   },
   student_blacklisted: {
     outcome: 'rejected',
@@ -45,7 +74,7 @@ const PRESENTATIONS: Record<string, Omit<StatusPresentation, 'outcome'> & { outc
     advice: 'Contact the issuing institution — this cannot be resolved by retrying.',
     showStudentDetails: true,
     showFaceDetails: false,
-    allowRetry: false,
+    retry: null,
   },
   student_inactive: {
     outcome: 'rejected',
@@ -57,7 +86,7 @@ const PRESENTATIONS: Record<string, Omit<StatusPresentation, 'outcome'> & { outc
     advice: 'Contact the issuing institution to have the record reactivated.',
     showStudentDetails: true,
     showFaceDetails: false,
-    allowRetry: false,
+    retry: null,
   },
   expired: {
     outcome: 'rejected',
@@ -68,7 +97,7 @@ const PRESENTATIONS: Record<string, Omit<StatusPresentation, 'outcome'> & { outc
     advice: 'A renewed ID card is required before this identity can be verified.',
     showStudentDetails: true,
     showFaceDetails: false,
-    allowRetry: false,
+    retry: null,
   },
   document_validation_failed: {
     outcome: 'inconclusive',
@@ -81,7 +110,7 @@ const PRESENTATIONS: Record<string, Omit<StatusPresentation, 'outcome'> & { outc
       'Retake both sides of the card in good light, keeping the validity date sharp and fully in frame.',
     showStudentDetails: true,
     showFaceDetails: false,
-    allowRetry: true,
+    retry: RETAKE_ID_FRONT,
   },
   reference_image_missing: {
     outcome: 'inconclusive',
@@ -93,7 +122,7 @@ const PRESENTATIONS: Record<string, Omit<StatusPresentation, 'outcome'> & { outc
     advice: 'This needs to be fixed on the institution side — retrying will not help.',
     showStudentDetails: true,
     showFaceDetails: false,
-    allowRetry: false,
+    retry: null,
   },
   face_not_detected: {
     outcome: 'inconclusive',
@@ -105,20 +134,19 @@ const PRESENTATIONS: Record<string, Omit<StatusPresentation, 'outcome'> & { outc
       'Retake the selfie face-on in even light, with nothing covering your face, and only one person in frame.',
     showStudentDetails: true,
     showFaceDetails: false,
-    allowRetry: true,
+    retry: RETAKE_SELFIE,
   },
   face_mismatch: {
     outcome: 'rejected',
     tone: 'danger',
     icon: '✖',
     title: 'Face did not match',
-    summary:
-      'The live selfie did not match the reference photo held for this student record.',
+    summary: 'The live selfie did not match the reference photo held for this student record.',
     advice:
       'If this is your own ID, retake the selfie face-on in better light. Repeated mismatches are referred for manual review.',
     showStudentDetails: true,
     showFaceDetails: true,
-    allowRetry: true,
+    retry: RETAKE_SELFIE,
   },
   error: {
     outcome: 'inconclusive',
@@ -126,10 +154,11 @@ const PRESENTATIONS: Record<string, Omit<StatusPresentation, 'outcome'> & { outc
     icon: '⚙',
     title: 'Screening could not complete',
     summary: 'The screening service hit an unexpected problem while processing the submission.',
-    advice: 'Please try again in a moment. If it keeps failing, report it to the operator.',
+    advice:
+      'Please submit the same photos again in a moment. If it keeps failing, report it to the operator.',
     showStudentDetails: false,
     showFaceDetails: false,
-    allowRetry: true,
+    retry: RESUBMIT,
   },
 };
 
@@ -143,7 +172,7 @@ const COMPLETED_MATCH: StatusPresentation = {
   advice: 'No further action needed.',
   showStudentDetails: true,
   showFaceDetails: true,
-  allowRetry: false,
+  retry: null,
 };
 
 const COMPLETED_NO_FACE_RESULT: StatusPresentation = {
@@ -153,10 +182,10 @@ const COMPLETED_NO_FACE_RESULT: StatusPresentation = {
   title: 'Partially verified',
   summary:
     'The document details matched an institutional record, but no face-comparison result was returned.',
-  advice: 'Run the verification again so the face check can complete.',
+  advice: 'Submit the same photos again so the face check can complete.',
   showStudentDetails: true,
   showFaceDetails: false,
-  allowRetry: true,
+  retry: RESUBMIT,
 };
 
 const UNKNOWN_STATUS: StatusPresentation = {
@@ -169,17 +198,39 @@ const UNKNOWN_STATUS: StatusPresentation = {
   advice: 'Treat this as unverified and refer it for manual review.',
   showStudentDetails: true,
   showFaceDetails: true,
-  allowRetry: true,
+  retry: { mode: 'restart', label: 'Start a new verification' },
+};
+
+/** Shown when the screen somehow has no usable response object at all. */
+export const MISSING_RESULT: StatusPresentation = {
+  outcome: 'inconclusive',
+  tone: 'neutral',
+  icon: '?',
+  title: 'No result available',
+  summary: 'The screening result could not be read, so nothing can be reported for this attempt.',
+  advice: 'Please run the verification again.',
+  showStudentDetails: false,
+  showFaceDetails: false,
+  retry: { mode: 'restart', label: 'Start a new verification' },
 };
 
 /**
  * Maps a backend screening result onto user-facing copy and visual treatment.
  *
- * Raw status strings are never shown as the primary message. Unknown statuses
- * fall back to a safe "needs review" state rather than being treated as a pass.
+ * Raw status strings are never shown as the primary message, and an unknown or
+ * malformed status falls back to a safe "needs review" state rather than being
+ * treated as a pass. Nothing here infers a verdict the backend did not send.
  */
-export function presentScreeningResult(result: ScreeningResponse): StatusPresentation {
-  const status: ScreeningStatus = result?.status ?? '';
+export function presentScreeningResult(
+  result: ScreeningResponse | null | undefined,
+): StatusPresentation {
+  if (!result || typeof result !== 'object') return MISSING_RESULT;
+
+  const rawStatus: ScreeningStatus = typeof result.status === 'string' ? result.status : '';
+  // Tolerate casing/whitespace differences without inventing new meanings.
+  const status = rawStatus.trim().toLowerCase();
+
+  if (status.length === 0) return MISSING_RESULT;
 
   if (status === 'completed') {
     const face = result.face_verification;
@@ -202,7 +253,7 @@ export function describeSimilarity(confidence: number): {
   band: string;
   tone: SemanticTone;
 } {
-  if (!Number.isFinite(confidence)) {
+  if (typeof confidence !== 'number' || !Number.isFinite(confidence)) {
     return { score: '—', band: 'Not available', tone: 'neutral' };
   }
 

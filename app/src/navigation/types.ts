@@ -11,7 +11,13 @@ import type { CaptureSlot, ScreeningResponse } from '../types/screening';
 export type RootStackParamList = {
   Splash: undefined;
   Home: undefined;
-  Capture: { slot: CaptureSlot };
+  /**
+   * `returnTo` marks a capture opened from Review (a retake or a fill-in for a
+   * missing slot). It is passed explicitly rather than inferred from the
+   * navigation stack, so back-navigation cannot make the Capture screen guess
+   * the wrong destination.
+   */
+  Capture: { slot: CaptureSlot; returnTo?: 'Review' };
   Review: undefined;
   Processing: undefined;
   Result: { result: ScreeningResponse };

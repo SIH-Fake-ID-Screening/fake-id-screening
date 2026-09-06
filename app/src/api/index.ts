@@ -6,6 +6,11 @@ export {
   toApiError,
   configError,
   invalidInputError,
+  networkError,
+  timeoutError,
+  cancelledError,
+  httpError,
+  malformedResponseError,
 } from './errors';
 export type { ApiErrorKind } from './errors';
 export {

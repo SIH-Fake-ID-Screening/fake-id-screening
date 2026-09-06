@@ -34,16 +34,41 @@ interface ReactNativeFilePart {
   type: string;
 }
 
+/** Only formats the backend accepts; anything else is sent as JPEG. */
+const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png'] as const;
+
+/**
+ * Strips path separators and control characters from a filename so the
+ * multipart header cannot be broken (or a path smuggled) by a value that came
+ * back from the camera.
+ */
+function sanitiseFileName(raw: string): string {
+  return raw
+    .replace(/[\r\n"\\/]+/g, '')
+    .replace(/\s+/g, '-')
+    .trim();
+}
+
 function toFilePart(image: CapturedImage, fallbackName: string): ReactNativeFilePart {
-  // Preserve what the camera actually produced; only fall back when absent.
-  const type = image.mimeType ?? 'image/jpeg';
+  // Preserve what the camera actually produced; only fall back when the value
+  // is absent or not a format the backend accepts.
+  const type = ALLOWED_MIME_TYPES.includes(image.mimeType as (typeof ALLOWED_MIME_TYPES)[number])
+    ? image.mimeType
+    : 'image/jpeg';
+
   const extension = type === 'image/png' ? 'png' : 'jpg';
+
+  const candidate =
+    typeof image.fileName === 'string' ? sanitiseFileName(image.fileName) : '';
+
+  // The extension must agree with the declared MIME type, otherwise servers
+  // that sniff by name can reject an otherwise valid upload.
   const name =
-    typeof image.fileName === 'string' && image.fileName.trim().length > 0
-      ? image.fileName.trim()
+    candidate.length > 0 && new RegExp(`\\.${extension}$`, 'i').test(candidate)
+      ? candidate
       : `${fallbackName}.${extension}`;
 
-  return { uri: image.uri, name, type };
+  return { uri: image.uri.trim(), name, type };
 }
 
 /**

@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Image } from 'expo-image';
@@ -15,7 +15,8 @@ import type { RootStackScreenProps } from '../navigation/types';
  *
  * Lists the three slots with their state, a thumbnail of the captured image
  * and per-slot retake actions. Images come straight from `CaptureContext`
- * (local cache URIs produced by the camera step).
+ * (local cache URIs produced by the camera step) — the same URI is displayed
+ * and uploaded, so nothing is copied or duplicated.
  *
  * Submitting starts the real `POST /api/v1/screen` upload. The request is
  * owned by `ScreeningContext`, so moving to the Processing screen does not
@@ -23,27 +24,73 @@ import type { RootStackScreenProps } from '../navigation/types';
  * images — no recapture needed.
  */
 export function ReviewScreen({ navigation }: RootStackScreenProps<'Review'>) {
-  const { captures, isComplete, completedCount } = useCaptures();
-  const { submit, isSubmitting, error, isConfigured, phase } = useScreening();
+  const { captures, isComplete, completedCount, nextIncompleteSlot } = useCaptures();
+  const { submit, isSubmitting, error, isConfigured, phase, wasCancelled } = useScreening();
+
+  /** Explains a blocked submit tap (e.g. a photo is still missing). */
+  const [blockedReason, setBlockedReason] = useState<string | null>(null);
 
   const hasFailed = phase === 'failed' && error !== null;
   const dangerTone = toneStyles('danger');
+  const warningTone = toneStyles('warning');
+  const canSubmit = isComplete && isConfigured && !isSubmitting;
 
   const startVerification = useCallback(() => {
-    if (isSubmitting || !isComplete) return;
+    // Duplicate-submit protection is layered: the button is disabled while a
+    // request is in flight, and `ScreeningContext.submit` also refuses
+    // re-entry synchronously.
+    if (isSubmitting) return;
+
+    if (!isConfigured) {
+      setBlockedReason(
+        'No screening server address is configured, so the photos cannot be submitted. ' +
+          'Set EXPO_PUBLIC_API_BASE_URL and restart the app.',
+      );
+      return;
+    }
+
+    if (!isComplete) {
+      const missing = CAPTURE_SLOTS.filter((meta) => captures[meta.slot] === null)
+        .map((meta) => meta.label.toLowerCase())
+        .join(', ');
+
+      setBlockedReason(
+        `All three photos are needed before screening can start. Still missing: ${missing}.`,
+      );
+      return;
+    }
+
+    setBlockedReason(null);
 
     // Fire the upload, then show the shared processing screen. The promise is
     // intentionally not awaited here: its outcome is read from context by the
     // Processing screen, which is what advances to Result.
     void submit();
     navigation.navigate('Processing');
-  }, [isComplete, isSubmitting, navigation, submit]);
+  }, [captures, isComplete, isConfigured, isSubmitting, navigation, submit]);
+
+  const goToCapture = useCallback(
+    (slot: (typeof CAPTURE_SLOTS)[number]['slot']) => {
+      setBlockedReason(null);
+      // `returnTo` brings the user straight back here after the retake.
+      navigation.navigate('Capture', { slot, returnTo: 'Review' });
+    },
+    [navigation],
+  );
 
   const submitLabel = isSubmitting
     ? 'Submitting…'
     : hasFailed
       ? 'Try verification again'
       : 'Start Verification';
+
+  const footerNote = !isConfigured
+    ? 'No screening server is configured, so submission is disabled.'
+    : isSubmitting
+      ? 'Uploading your photos — keep the app open.'
+      : isComplete
+        ? 'Your photos are sent over a secure connection for screening.'
+        : `${completedCount} of ${CAPTURE_SLOTS.length} photos captured.`;
 
   return (
     <Screen
@@ -52,19 +99,17 @@ export function ReviewScreen({ navigation }: RootStackScreenProps<'Review'>) {
           <Button
             label={submitLabel}
             icon={hasFailed ? '↻' : '🔍'}
-            disabled={!isComplete || !isConfigured}
+            disabled={!canSubmit}
             loading={isSubmitting}
             onPress={startVerification}
-            accessibilityHint="Uploads the three photos for screening"
+            accessibilityHint={
+              canSubmit
+                ? 'Uploads the three photos for screening'
+                : 'Unavailable until all three photos are captured'
+            }
           />
-          <Text variant="caption" tone="tertiary" center>
-            {!isConfigured
-              ? 'No screening server is configured, so submission is disabled.'
-              : isSubmitting
-                ? 'Uploading your photos — keep the app open.'
-                : isComplete
-                  ? 'Your photos are sent over a secure connection for screening.'
-                  : `${completedCount} of ${CAPTURE_SLOTS.length} photos captured.`}
+          <Text variant="caption" tone="tertiary" center accessibilityLiveRegion="polite">
+            {footerNote}
           </Text>
         </>
       }
@@ -72,7 +117,9 @@ export function ReviewScreen({ navigation }: RootStackScreenProps<'Review'>) {
       <StatusBar style="dark" />
 
       <View style={styles.intro}>
-        <Text variant="title">Review your submission</Text>
+        <Text variant="title" accessibilityRole="header">
+          Review your submission
+        </Text>
         <Text variant="body" tone="secondary">
           Check each photo is clear and readable. You can retake any of them before submitting.
         </Text>
@@ -117,10 +164,57 @@ export function ReviewScreen({ navigation }: RootStackScreenProps<'Review'>) {
         </View>
       ) : null}
 
+      {/* A user-cancelled attempt is reported calmly, not as an error. */}
+      {!hasFailed && wasCancelled ? (
+        <View
+          style={[
+            styles.notice,
+            { backgroundColor: warningTone.bg, borderColor: warningTone.border },
+          ]}
+          accessibilityLiveRegion="polite"
+        >
+          <Text variant="label" style={{ color: warningTone.fg }}>
+            Verification cancelled
+          </Text>
+          <Text variant="caption" style={{ color: warningTone.fg }}>
+            Nothing was screened. Your photos are still here — submit again when you're ready.
+          </Text>
+        </View>
+      ) : null}
+
+      {/* Why a submit tap did not proceed. */}
+      {blockedReason ? (
+        <View
+          style={[
+            styles.notice,
+            { backgroundColor: warningTone.bg, borderColor: warningTone.border },
+          ]}
+          accessibilityRole="alert"
+        >
+          <Text variant="label" style={{ color: warningTone.fg }}>
+            Cannot submit yet
+          </Text>
+          <Text variant="caption" style={{ color: warningTone.fg }}>
+            {blockedReason}
+          </Text>
+          {nextIncompleteSlot ? (
+            <Button
+              label="Capture the missing photo"
+              variant="secondary"
+              size="md"
+              onPress={() => goToCapture(nextIncompleteSlot)}
+            />
+          ) : null}
+        </View>
+      ) : null}
+
       <View style={styles.list}>
         {CAPTURE_SLOTS.map((meta) => {
           const capture = captures[meta.slot];
-          const captured = capture !== null && capture.uri.length > 0;
+          // A stored capture with an empty URI would be unusable, so treat it
+          // as missing rather than showing a broken thumbnail.
+          const captured =
+            capture !== null && typeof capture.uri === 'string' && capture.uri.trim().length > 0;
 
           return (
             <Card key={meta.slot} style={styles.item}>
@@ -164,7 +258,12 @@ export function ReviewScreen({ navigation }: RootStackScreenProps<'Review'>) {
                 variant="secondary"
                 size="md"
                 disabled={isSubmitting}
-                onPress={() => navigation.navigate('Capture', { slot: meta.slot })}
+                onPress={() => goToCapture(meta.slot)}
+                accessibilityHint={
+                  captured
+                    ? `Reopens the camera to replace the ${meta.label.toLowerCase()} photo`
+                    : `Opens the camera to take the ${meta.label.toLowerCase()} photo`
+                }
               />
             </Card>
           );

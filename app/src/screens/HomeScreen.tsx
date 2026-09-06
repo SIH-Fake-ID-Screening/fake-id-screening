@@ -7,12 +7,13 @@ import { APP_NAME, APP_TAGLINE, ORGANISATION, TRUST_POINTS } from '../constants/
 import { CAPTURE_SLOTS } from '../constants/captureSlots';
 import { useCaptures } from '../context/CaptureContext';
 import { useScreening } from '../context/ScreeningContext';
-import { colors, palette, radii, shadows, spacing } from '../theme';
+import { colors, palette, radii, shadows, spacing, toneStyles } from '../theme';
 import type { RootStackScreenProps } from '../navigation/types';
 
 export function HomeScreen({ navigation }: RootStackScreenProps<'Home'>) {
   const { reset } = useCaptures();
-  const { reset: resetScreening } = useScreening();
+  const { reset: resetScreening, isConfigured } = useScreening();
+  const warningTone = toneStyles('warning');
 
   const startVerification = () => {
     // Always begin from a clean slate so a previous run can't leak images
@@ -33,7 +34,9 @@ export function HomeScreen({ navigation }: RootStackScreenProps<'Home'>) {
             accessibilityHint="Begins the three-step identity verification flow"
           />
           <Text variant="caption" tone="tertiary" center>
-            Takes about a minute · 3 photos required
+            {isConfigured
+              ? 'Takes about a minute · 3 photos required'
+              : 'Screening server not configured — submission will be blocked at the end.'}
           </Text>
         </>
       }
@@ -54,6 +57,26 @@ export function HomeScreen({ navigation }: RootStackScreenProps<'Home'>) {
           </View>
         </View>
       </View>
+
+      {/* Missing configuration is announced here rather than only at the end,
+          so a demo is not set up three photos deep before it fails. */}
+      {!isConfigured ? (
+        <View
+          style={[
+            styles.configNotice,
+            { backgroundColor: warningTone.bg, borderColor: warningTone.border },
+          ]}
+          accessibilityRole="alert"
+        >
+          <Text variant="label" style={{ color: warningTone.fg }}>
+            Screening server not configured
+          </Text>
+          <Text variant="caption" style={{ color: warningTone.fg }}>
+            Photos can be captured, but nothing can be screened until
+            EXPO_PUBLIC_API_BASE_URL points at the backend. See app/README.md.
+          </Text>
+        </View>
+      ) : null}
 
       {/* Hero */}
       <View style={styles.hero}>
@@ -140,6 +163,13 @@ const styles = StyleSheet.create({
   },
   brandText: {
     flex: 1,
+  },
+  configNotice: {
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    padding: spacing.lg,
+    gap: spacing.xs,
+    marginBottom: spacing.xl,
   },
   hero: {
     gap: spacing.md,
