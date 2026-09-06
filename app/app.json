@@ -1,0 +1,44 @@
+{
+  "expo": {
+    "name": "VerifID",
+    "slug": "verifid-screening",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "verifid",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#F8FAFC",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0F172A"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "org.sih.verifid"
+    },
+    "android": {
+      "package": "org.sih.verifid",
+      "adaptiveIcon": {
+        "backgroundColor": "#0F172A",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-image",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "VerifID uses the camera to capture your ID card and a live selfie for identity verification."
+        }
+      ]
+    ]
+  }
+}
