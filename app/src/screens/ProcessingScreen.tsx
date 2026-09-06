@@ -2,15 +2,18 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Animated, BackHandler, Easing, StyleSheet, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 
-import { Button, Card, Screen, Text } from '../components';
+import { Badge, Button, Card, Screen, Text } from '../components';
+import { DEMO_MODE_LABEL } from '../config/demoMode';
 import { useScreening } from '../context/ScreeningContext';
+import { DEMO_STAGE_COPY, DEMO_STAGE_ORDER } from '../demo/offlineDemoScreening';
 import { colors, radii, spacing } from '../theme';
 import type { RootStackScreenProps } from '../navigation/types';
 
 /**
- * Honest waiting copy. `POST /api/v1/screen` is a single request/response
- * call with no progress stream, so these lines describe *what is happening*
- * and never claim a step has finished or report a percentage.
+ * Honest waiting copy for the backend path. `POST /api/v1/screen` is a single
+ * request/response call with no progress stream, so these lines describe
+ * *what is happening* and never claim a step has finished or report a
+ * percentage.
  */
 const WAITING_LINES: readonly string[] = [
   'Uploading your photos securely…',
@@ -25,15 +28,17 @@ const LINE_INTERVAL_MS = 4_000;
 const SLOW_NOTICE_MS = 20_000;
 
 /**
- * Shown while the submission is with the backend.
+ * Shown while a verification attempt is running — the backend request, or the
+ * on-device offline demo run.
  *
- * Deliberately shows no percentage and no staged checklist: any such progress
- * would be fiction. The request itself is owned by `ScreeningContext`; this
- * screen only reacts to its outcome — forward to Result on success, back to
- * Review on failure or cancellation.
+ * Deliberately shows no percentage and no completed-step checklist: in backend
+ * mode any such progress would be fiction, and in demo mode the stages are UX
+ * states only, not analysis steps. The attempt itself is owned by
+ * `ScreeningContext`; this screen only reacts to its outcome — forward to
+ * Result on success, back to Review on failure or cancellation.
  */
 export function ProcessingScreen({ navigation }: RootStackScreenProps<'Processing'>) {
-  const { phase, result, isSubmitting, cancel } = useScreening();
+  const { phase, result, isSubmitting, cancel, isDemoMode, demoStage } = useScreening();
   const pulse = useRef(new Animated.Value(0)).current;
 
   const [lineIndex, setLineIndex] = useState(0);
@@ -41,10 +46,10 @@ export function ProcessingScreen({ navigation }: RootStackScreenProps<'Processin
   /** Ensures the outcome only ever triggers one navigation. */
   const navigated = useRef(false);
   /**
-   * True once an in-flight request has actually been observed. Review fires
-   * `submit()` and navigates here in the same tick, so the very first render
-   * can still see `phase === 'idle'`; without this the screen would bounce
-   * straight back before the upload was ever seen.
+   * True once a running attempt has actually been observed. Review starts the
+   * attempt and navigates here in the same tick, so the very first render can
+   * still see `phase === 'idle'`; without this the screen would bounce
+   * straight back before the attempt was ever seen.
    */
   const sawSubmitting = useRef(false);
 
@@ -62,9 +67,9 @@ export function ProcessingScreen({ navigation }: RootStackScreenProps<'Processin
     }
   }, [navigation]);
 
-  // Route once the real request settles. `replace` keeps Processing out of the
-  // back stack; a failure or cancellation returns to Review, where the error
-  // and the captured images are still available for a retry.
+  // Route once the attempt settles. `replace` keeps Processing out of the back
+  // stack; a failure or cancellation returns to Review, where the error and
+  // the captured images are still available for a retry.
   useEffect(() => {
     if (navigated.current) return;
 
@@ -80,9 +85,9 @@ export function ProcessingScreen({ navigation }: RootStackScreenProps<'Processin
       return;
     }
 
-    // 'idle' *after* a request was seen means the attempt was cancelled or
-    // reset; there is nothing left to wait for, so do not sit on a spinner
-    // forever. Before that it just means the submit has not landed yet.
+    // 'idle' *after* an attempt was seen means it was cancelled or reset;
+    // there is nothing left to wait for, so do not sit on a spinner forever.
+    // Before that it just means the submit has not landed yet.
     if (phase === 'idle' && sawSubmitting.current) {
       navigated.current = true;
       returnToReview();
@@ -94,13 +99,13 @@ export function ProcessingScreen({ navigation }: RootStackScreenProps<'Processin
   const handleCancel = useCallback(() => {
     if (navigated.current) return;
     navigated.current = true;
-    // Abort first so the in-flight upload cannot land after we leave.
+    // Abort first so a running attempt cannot land after we leave.
     cancel();
     returnToReview();
   }, [cancel, returnToReview]);
 
-  // Android hardware back must not silently drop the screen while a request is
-  // in flight; it is routed through the same cancel path as the button.
+  // Android hardware back must not silently drop the screen while an attempt
+  // is running; it is routed through the same cancel path as the button.
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
       if (isSubmitting) {
@@ -112,24 +117,26 @@ export function ProcessingScreen({ navigation }: RootStackScreenProps<'Processin
     return () => sub.remove();
   }, [handleCancel, isSubmitting]);
 
-  // Rotate the waiting copy so a long wait still looks alive, without ever
-  // implying measured progress.
+  // Rotate the backend waiting copy so a long wait still looks alive, without
+  // ever implying measured progress. Demo mode drives its own stage line.
   useEffect(() => {
-    if (!isSubmitting) return;
+    if (!isSubmitting || isDemoMode) return;
 
     const timer = setInterval(() => {
       setLineIndex((i) => (i + 1) % WAITING_LINES.length);
     }, LINE_INTERVAL_MS);
 
     return () => clearInterval(timer);
-  }, [isSubmitting]);
+  }, [isDemoMode, isSubmitting]);
 
   useEffect(() => {
-    if (!isSubmitting) return;
+    // The local run is bounded and fast, so a "taking longer" notice would
+    // only ever be noise there.
+    if (!isSubmitting || isDemoMode) return;
 
     const timer = setTimeout(() => setSlow(true), SLOW_NOTICE_MS);
     return () => clearTimeout(timer);
-  }, [isSubmitting]);
+  }, [isDemoMode, isSubmitting]);
 
   useEffect(() => {
     const loop = Animated.loop(
@@ -155,7 +162,12 @@ export function ProcessingScreen({ navigation }: RootStackScreenProps<'Processin
   const scale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.08] });
   const opacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.35, 0.1] });
 
-  const waitingLine = WAITING_LINES[lineIndex] ?? WAITING_LINES[0];
+  // In demo mode the line follows the current stage; the stage list is shown
+  // as plain state text, never as a percentage or a completed-step tally.
+  const activeStage = demoStage ?? DEMO_STAGE_ORDER[0];
+  const statusLine = isDemoMode
+    ? DEMO_STAGE_COPY[activeStage]
+    : (WAITING_LINES[lineIndex] ?? WAITING_LINES[0]);
 
   return (
     <Screen
@@ -166,17 +178,23 @@ export function ProcessingScreen({ navigation }: RootStackScreenProps<'Processin
           label="Cancel verification"
           variant="ghost"
           onPress={handleCancel}
-          accessibilityHint="Stops the screening request and returns to the review screen"
+          accessibilityHint={
+            isDemoMode
+              ? 'Stops the offline demo verification and returns to the review screen'
+              : 'Stops the screening request and returns to the review screen'
+          }
         />
       }
     >
       <StatusBar style="dark" />
 
       <View style={styles.center}>
+        {isDemoMode ? <Badge label={DEMO_MODE_LABEL} tone="primary" icon="◐" /> : null}
+
         <View style={styles.spinnerWrap}>
           <Animated.View style={[styles.pulse, { transform: [{ scale }], opacity }]} />
           <View style={styles.spinnerCore}>
-            {/* Indeterminate by design — the backend reports no progress. */}
+            {/* Indeterminate by design — neither path reports progress. */}
             <ActivityIndicator
               size="large"
               color={colors.primary}
@@ -196,7 +214,7 @@ export function ProcessingScreen({ navigation }: RootStackScreenProps<'Processin
           style={styles.body}
           accessibilityLiveRegion="polite"
         >
-          {waitingLine}
+          {statusLine}
         </Text>
 
         <Text variant="caption" tone="tertiary" center style={styles.body}>
@@ -219,7 +237,10 @@ export function ProcessingScreen({ navigation }: RootStackScreenProps<'Processin
 
       <Card variant="plain" style={styles.note}>
         <Text variant="caption" tone="secondary" center>
-          Screening runs entirely on the backend. No identity decision is made on this device.
+          {isDemoMode
+            ? 'Offline demo mode: the flow completes on this device with a fixed demonstration ' +
+              'result. No document, face or tampering analysis runs here.'
+            : 'Screening runs entirely on the backend. No identity decision is made on this device.'}
         </Text>
       </Card>
     </Screen>
@@ -242,6 +263,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing.lg,
+    marginTop: spacing.lg,
   },
   pulse: {
     position: 'absolute',

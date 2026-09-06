@@ -3,17 +3,26 @@ import { StyleSheet, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 
 import { Badge, Button, Card, InfoRow, Screen, Text } from '../components';
+import { DEMO_MODE_LABEL } from '../config/demoMode';
 import { useCaptures } from '../context/CaptureContext';
 import { useScreening } from '../context/ScreeningContext';
 import { colors, radii, spacing, toneStyles } from '../theme';
-import { describeSimilarity, presentScreeningResult } from '../utils/statusPresentation';
+import {
+  RISK_LABELS,
+  describeSimilarity,
+  presentScreeningResult,
+  riskBandFor,
+  riskTone,
+} from '../utils/statusPresentation';
 import type { RootStackScreenProps } from '../navigation/types';
 
 /**
  * Final screen for one verification attempt.
  *
- * Everything shown here comes from the real backend response passed as a route
- * param. Unknown or malformed statuses are presented as "needs review" by
+ * Everything shown here comes from the response passed as a route param —
+ * either the real backend response, or the clearly labelled offline demo
+ * result, which uses the identical schema so this screen needs no special
+ * case. Unknown or malformed statuses are presented as "needs review" by
  * {@link presentScreeningResult} rather than being interpreted as a pass, and
  * every optional field is read defensively so an unexpected payload cannot
  * crash the screen.
@@ -21,13 +30,19 @@ import type { RootStackScreenProps } from '../navigation/types';
 export function ResultScreen({ navigation, route }: RootStackScreenProps<'Result'>) {
   const result = route.params?.result ?? null;
   const { reset, clearCapture } = useCaptures();
-  const { reset: resetScreening } = useScreening();
+  const { reset: resetScreening, isDemoMode } = useScreening();
 
   const presentation = presentScreeningResult(result);
   const tone = toneStyles(presentation.tone);
   const student = result?.student ?? null;
   const face = result?.face_verification ?? null;
   const retry = presentation.retry;
+
+  const risk = riskBandFor(presentation);
+  const riskToneStyles = toneStyles(riskTone(risk));
+  // Confidence keeps the project's "0.87 of 1.00" convention — it is a
+  // similarity score, never a percentage.
+  const confidence = face ? describeSimilarity(face.confidence) : null;
 
   /** Clears everything and returns to Home. */
   const startOver = useCallback(() => {
@@ -115,6 +130,12 @@ export function ResultScreen({ navigation, route }: RootStackScreenProps<'Result
     >
       <StatusBar style="dark" />
 
+      {/* Subtle, single mode marker so a demo result is never mistaken for a
+          real backend screening decision. */}
+      {isDemoMode ? (
+        <Badge label={DEMO_MODE_LABEL} tone="primary" icon="◐" style={styles.modeBadge} />
+      ) : null}
+
       {/* Verdict banner */}
       <View
         style={[styles.verdict, { backgroundColor: tone.bg, borderColor: tone.border }]}
@@ -133,6 +154,51 @@ export function ResultScreen({ navigation, route }: RootStackScreenProps<'Result
           {presentation.summary}
         </Text>
       </View>
+
+      {/* Headline figures. Each carries a text label as well as its tone, so
+          nothing here is conveyed by colour alone. */}
+      <Card style={styles.block}>
+        <Text variant="label" tone="tertiary">
+          Verification summary
+        </Text>
+
+        <View style={styles.summaryRow}>
+          <Text variant="caption" tone="secondary" style={styles.summaryLabel}>
+            Confidence
+          </Text>
+          <Text
+            variant="bodyStrong"
+            style={styles.summaryValue}
+            accessibilityLabel={
+              confidence
+                ? `Confidence ${confidence.score} of 1.00`
+                : 'Confidence not available'
+            }
+          >
+            {confidence ? `${confidence.score} of 1.00` : 'Not available'}
+          </Text>
+        </View>
+
+        <View style={styles.summaryRow}>
+          <Text variant="caption" tone="secondary" style={styles.summaryLabel}>
+            Risk
+          </Text>
+          <View style={styles.summaryValueWrap}>
+            <Badge
+              label={RISK_LABELS[risk]}
+              tone={riskTone(risk)}
+              icon={risk === 'low' ? '✓' : risk === 'high' ? '✕' : '!'}
+              style={styles.riskBadge}
+            />
+          </View>
+        </View>
+
+        <Text variant="caption" tone="tertiary" style={{ color: riskToneStyles.fg }}>
+          {risk === 'low'
+            ? 'Risk band reflects the reported outcome for this attempt.'
+            : 'Risk band reflects the reported outcome — treat this attempt as unconfirmed.'}
+        </Text>
+      </Card>
 
       {/* Recommended action */}
       <Card variant="plain" style={styles.block}>
@@ -208,7 +274,7 @@ export function ResultScreen({ navigation, route }: RootStackScreenProps<'Result
         </Text>
         {serverNote ? (
           <Text variant="caption" tone="tertiary">
-            Server note: {serverNote}
+            {isDemoMode ? 'Note' : 'Server note'}: {serverNote}
           </Text>
         ) : null}
         {/* Raw status is surfaced only when this app version cannot interpret
@@ -248,6 +314,29 @@ function describeRawStatus(status: unknown): string {
 }
 
 const styles = StyleSheet.create({
+  modeBadge: {
+    marginBottom: spacing.md,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.lg,
+    paddingVertical: spacing.sm,
+  },
+  summaryLabel: {
+    flexShrink: 0,
+  },
+  summaryValue: {
+    flexShrink: 1,
+    textAlign: 'right',
+  },
+  summaryValueWrap: {
+    alignItems: 'flex-end',
+  },
+  riskBadge: {
+    alignSelf: 'flex-end',
+  },
   verdict: {
     borderRadius: radii.xxl,
     borderWidth: 1,

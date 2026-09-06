@@ -3,7 +3,14 @@ import { StyleSheet, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 
 import { Badge, Button, Card, Screen, Text } from '../components';
-import { APP_NAME, APP_TAGLINE, ORGANISATION, TRUST_POINTS } from '../constants/app';
+import { DEMO_MODE_LABEL, DEMO_MODE_SHORT_NOTE } from '../config/demoMode';
+import {
+  APP_NAME,
+  APP_TAGLINE,
+  DEMO_TRUST_POINTS,
+  ORGANISATION,
+  TRUST_POINTS,
+} from '../constants/app';
 import { CAPTURE_SLOTS } from '../constants/captureSlots';
 import { useCaptures } from '../context/CaptureContext';
 import { useScreening } from '../context/ScreeningContext';
@@ -12,8 +19,13 @@ import type { RootStackScreenProps } from '../navigation/types';
 
 export function HomeScreen({ navigation }: RootStackScreenProps<'Home'>) {
   const { reset } = useCaptures();
-  const { reset: resetScreening, isConfigured } = useScreening();
+  const { reset: resetScreening, isConfigured, isDemoMode } = useScreening();
   const warningTone = toneStyles('warning');
+
+  // In offline demo mode there is nothing to configure, so the backend
+  // configuration warning would be misleading.
+  const showConfigWarning = !isDemoMode && !isConfigured;
+  const trustPoints = isDemoMode ? DEMO_TRUST_POINTS : TRUST_POINTS;
 
   const startVerification = () => {
     // Always begin from a clean slate so a previous run can't leak images
@@ -34,9 +46,11 @@ export function HomeScreen({ navigation }: RootStackScreenProps<'Home'>) {
             accessibilityHint="Begins the three-step identity verification flow"
           />
           <Text variant="caption" tone="tertiary" center>
-            {isConfigured
-              ? 'Takes about a minute · 3 photos required'
-              : 'Screening server not configured — submission will be blocked at the end.'}
+            {isDemoMode
+              ? 'Takes about a minute · 3 photos required · runs offline'
+              : isConfigured
+                ? 'Takes about a minute · 3 photos required'
+                : 'Screening server not configured — submission will be blocked at the end.'}
           </Text>
         </>
       }
@@ -55,12 +69,15 @@ export function HomeScreen({ navigation }: RootStackScreenProps<'Home'>) {
               {ORGANISATION}
             </Text>
           </View>
+          {/* Subtle mode marker in the brand row — stated once, not repeated
+              as a large warning on every screen. */}
+          {isDemoMode ? <Badge label={DEMO_MODE_LABEL} tone="primary" icon="◐" /> : null}
         </View>
       </View>
 
       {/* Missing configuration is announced here rather than only at the end,
           so a demo is not set up three photos deep before it fails. */}
-      {!isConfigured ? (
+      {showConfigWarning ? (
         <View
           style={[
             styles.configNotice,
@@ -88,6 +105,11 @@ export function HomeScreen({ navigation }: RootStackScreenProps<'Home'>) {
           {APP_TAGLINE}. Capture your ID card and a live selfie — the secure backend extracts the
           document details, checks them against institutional records and confirms the face match.
         </Text>
+        {isDemoMode ? (
+          <Text variant="caption" tone="tertiary">
+            {DEMO_MODE_SHORT_NOTE}
+          </Text>
+        ) : null}
       </View>
 
       {/* The three required inputs */}
@@ -122,7 +144,7 @@ export function HomeScreen({ navigation }: RootStackScreenProps<'Home'>) {
         </Text>
 
         <View style={styles.trustList}>
-          {TRUST_POINTS.map((point) => (
+          {trustPoints.map((point) => (
             <Card key={point.title} variant="plain" style={styles.trustCard}>
               <Text style={styles.trustIcon}>{point.icon}</Text>
               <View style={styles.trustBody}>

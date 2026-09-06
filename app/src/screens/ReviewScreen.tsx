@@ -1,9 +1,11 @@
 import React, { useCallback, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import { Image } from 'expo-image';
 
 import { Badge, Button, Card, Screen, Text } from '../components';
+import { DEMO_MODE_LABEL, DEMO_MODE_NOTE } from '../config/demoMode';
 import { CAPTURE_SLOTS } from '../constants/captureSlots';
 import { useCaptures } from '../context/CaptureContext';
 import { useScreening } from '../context/ScreeningContext';
@@ -11,29 +13,51 @@ import { colors, radii, spacing, toneStyles } from '../theme';
 import type { RootStackScreenProps } from '../navigation/types';
 
 /**
- * Final confirmation before anything is uploaded.
+ * Final confirmation before a verification attempt starts.
  *
  * Lists the three slots with their state, a thumbnail of the captured image
  * and per-slot retake actions. Images come straight from `CaptureContext`
  * (local cache URIs produced by the camera step) — the same URI is displayed
- * and uploaded, so nothing is copied or duplicated.
+ * and, in backend mode, uploaded; nothing is copied or duplicated.
  *
- * Submitting starts the real `POST /api/v1/screen` upload. The request is
- * owned by `ScreeningContext`, so moving to the Processing screen does not
- * interrupt it, and a failed attempt can be retried from here with the same
- * images — no recapture needed.
+ * Verifying hands off to `ScreeningContext`, which owns the attempt: the real
+ * `POST /api/v1/screen` upload in backend mode, or the on-device offline demo
+ * run when no backend is configured. Either way, moving to the Processing
+ * screen does not interrupt it, and a failed attempt can be retried from here
+ * with the same images — no recapture needed.
  */
 export function ReviewScreen({ navigation }: RootStackScreenProps<'Review'>) {
   const { captures, isComplete, completedCount, nextIncompleteSlot } = useCaptures();
-  const { submit, isSubmitting, error, isConfigured, phase, wasCancelled } = useScreening();
+  const {
+    submit,
+    isSubmitting,
+    error,
+    isConfigured,
+    isDemoMode,
+    phase,
+    wasCancelled,
+    reset: resetScreening,
+  } = useScreening();
 
   /** Explains a blocked submit tap (e.g. a photo is still missing). */
   const [blockedReason, setBlockedReason] = useState<string | null>(null);
 
+  // Returning here after a completed attempt starts a *new* one, so the
+  // finished result is dropped: it must never be re-shown, and Processing must
+  // never route off a stale 'succeeded' phase.
+  useFocusEffect(
+    useCallback(() => {
+      if (phase === 'succeeded') resetScreening();
+    }, [phase, resetScreening]),
+  );
+
   const hasFailed = phase === 'failed' && error !== null;
   const dangerTone = toneStyles('danger');
   const warningTone = toneStyles('warning');
-  const canSubmit = isComplete && isConfigured && !isSubmitting;
+  // Demo mode needs no server address, so configuration only gates the
+  // backend path.
+  const isVerifiable = isDemoMode || isConfigured;
+  const canSubmit = isComplete && isVerifiable && !isSubmitting;
 
   const startVerification = useCallback(() => {
     // Duplicate-submit protection is layered: the button is disabled while a
@@ -41,7 +65,7 @@ export function ReviewScreen({ navigation }: RootStackScreenProps<'Review'>) {
     // re-entry synchronously.
     if (isSubmitting) return;
 
-    if (!isConfigured) {
+    if (!isVerifiable) {
       setBlockedReason(
         'No screening server address is configured, so the photos cannot be submitted. ' +
           'Set EXPO_PUBLIC_API_BASE_URL and restart the app.',
@@ -49,25 +73,32 @@ export function ReviewScreen({ navigation }: RootStackScreenProps<'Review'>) {
       return;
     }
 
+    // Capture validation happens before anything starts, so an incomplete
+    // session never reaches the Processing screen.
     if (!isComplete) {
-      const missing = CAPTURE_SLOTS.filter((meta) => captures[meta.slot] === null)
+      const missing = CAPTURE_SLOTS.filter((meta) => {
+        const image = captures[meta.slot];
+        return (
+          !image || typeof image.uri !== 'string' || image.uri.trim().length === 0
+        );
+      })
         .map((meta) => meta.label.toLowerCase())
         .join(', ');
 
       setBlockedReason(
-        `All three photos are needed before screening can start. Still missing: ${missing}.`,
+        `All three photos are needed before verification can start. Still missing: ${missing}.`,
       );
       return;
     }
 
     setBlockedReason(null);
 
-    // Fire the upload, then show the shared processing screen. The promise is
-    // intentionally not awaited here: its outcome is read from context by the
-    // Processing screen, which is what advances to Result.
+    // Start the attempt, then show the shared processing screen. The promise
+    // is intentionally not awaited here: its outcome is read from context by
+    // the Processing screen, which is what advances to Result.
     void submit();
     navigation.navigate('Processing');
-  }, [captures, isComplete, isConfigured, isSubmitting, navigation, submit]);
+  }, [captures, isComplete, isSubmitting, isVerifiable, navigation, submit]);
 
   const goToCapture = useCallback(
     (slot: (typeof CAPTURE_SLOTS)[number]['slot']) => {
@@ -79,17 +110,21 @@ export function ReviewScreen({ navigation }: RootStackScreenProps<'Review'>) {
   );
 
   const submitLabel = isSubmitting
-    ? 'Submitting…'
+    ? 'Verifying…'
     : hasFailed
       ? 'Try verification again'
-      : 'Start Verification';
+      : 'Verify Identity';
 
-  const footerNote = !isConfigured
+  const footerNote = !isVerifiable
     ? 'No screening server is configured, so submission is disabled.'
     : isSubmitting
-      ? 'Uploading your photos — keep the app open.'
+      ? isDemoMode
+        ? 'Running the offline demo verification — keep the app open.'
+        : 'Uploading your photos — keep the app open.'
       : isComplete
-        ? 'Your photos are sent over a secure connection for screening.'
+        ? isDemoMode
+          ? 'Nothing leaves this device in offline demo mode.'
+          : 'Your photos are sent over a secure connection for screening.'
         : `${completedCount} of ${CAPTURE_SLOTS.length} photos captured.`;
 
   return (
@@ -104,7 +139,9 @@ export function ReviewScreen({ navigation }: RootStackScreenProps<'Review'>) {
             onPress={startVerification}
             accessibilityHint={
               canSubmit
-                ? 'Uploads the three photos for screening'
+                ? isDemoMode
+                  ? 'Runs the offline demo verification on this device'
+                  : 'Uploads the three photos for screening'
                 : 'Unavailable until all three photos are captured'
             }
           />
@@ -117,16 +154,26 @@ export function ReviewScreen({ navigation }: RootStackScreenProps<'Review'>) {
       <StatusBar style="dark" />
 
       <View style={styles.intro}>
+        {/* Subtle, single mode marker — no repeated warning banners. */}
+        {isDemoMode ? (
+          <Badge label={DEMO_MODE_LABEL} tone="primary" icon="◐" style={styles.modeBadge} />
+        ) : null}
+
         <Text variant="title" accessibilityRole="header">
           Review your submission
         </Text>
         <Text variant="body" tone="secondary">
-          Check each photo is clear and readable. You can retake any of them before submitting.
+          Check each photo is clear and readable. You can retake any of them before verifying.
         </Text>
+        {isDemoMode ? (
+          <Text variant="caption" tone="tertiary">
+            {DEMO_MODE_NOTE}
+          </Text>
+        ) : null}
       </View>
 
       {/* Misconfiguration is shown up front so the disabled button is explained. */}
-      {!isConfigured ? (
+      {!isVerifiable ? (
         <View
           style={[
             styles.notice,
@@ -277,6 +324,9 @@ const styles = StyleSheet.create({
   intro: {
     gap: spacing.xs,
     marginBottom: spacing.xl,
+  },
+  modeBadge: {
+    marginBottom: spacing.xs,
   },
   notice: {
     borderRadius: radii.lg,

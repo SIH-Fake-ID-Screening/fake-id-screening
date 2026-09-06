@@ -17,6 +17,8 @@ export type ApiErrorKind =
   | 'timeout'
   /** Aborted deliberately (user cancelled / screen unmounted). */
   | 'cancelled'
+  /** The on-device offline demo path failed unexpectedly. */
+  | 'local_processing'
   /** Server answered with a non-2xx status. */
   | 'http'
   /** 2xx body was not JSON, or not the documented shape. */
@@ -53,6 +55,7 @@ const DEFAULT_RETRYABLE: Record<ApiErrorKind, boolean> = {
   network: true,
   timeout: true,
   cancelled: true,
+  local_processing: true,
   http: true,
   malformed_response: true,
 };
@@ -115,6 +118,22 @@ export function cancelledError(): ApiError {
   return new ApiError({
     kind: 'cancelled',
     message: 'Screening was cancelled before it finished.',
+  });
+}
+
+/**
+ * An unexpected failure in the on-device offline demo path.
+ *
+ * Kept distinct from {@link networkError} so the copy never blames a server
+ * that was deliberately never contacted.
+ */
+export function localProcessingError(detail?: string): ApiError {
+  return new ApiError({
+    kind: 'local_processing',
+    message:
+      'Verification could not be completed on this device. Please try again from the review ' +
+      'screen.',
+    detail,
   });
 }
 

@@ -13,6 +13,22 @@ export type RetryAction =
   | { mode: 'recapture'; slot: CaptureSlot; label: string }
   | { mode: 'restart'; label: string };
 
+/**
+ * Risk band shown alongside the verdict.
+ *
+ * This is a **presentation-level restatement of the outcome**, not a score
+ * returned by the backend (whose schema has no risk field): a verified
+ * outcome is low risk, an inconclusive one needs review, and a rejected one
+ * is high risk. Nothing is inferred beyond the outcome itself.
+ */
+export type RiskBand = 'low' | 'review' | 'high';
+
+export const RISK_LABELS: Record<RiskBand, string> = {
+  low: 'Low',
+  review: 'Needs review',
+  high: 'High',
+};
+
 /** How a screening outcome should be presented to the user. */
 export interface StatusPresentation {
   /** Overall verdict driving the visual treatment. */
@@ -239,6 +255,37 @@ export function presentScreeningResult(
   }
 
   return PRESENTATIONS[status] ?? UNKNOWN_STATUS;
+}
+
+/**
+ * Restates an outcome as a risk band.
+ *
+ * Purely derived from {@link StatusPresentation.outcome} — no additional
+ * judgement, and no dependence on any field the backend does not send.
+ */
+export function riskBandFor(presentation: StatusPresentation): RiskBand {
+  switch (presentation.outcome) {
+    case 'verified':
+      return 'low';
+    case 'rejected':
+      return 'high';
+    case 'inconclusive':
+    default:
+      return 'review';
+  }
+}
+
+/** Tone used when the risk band is rendered, so colour is never the only cue. */
+export function riskTone(band: RiskBand): SemanticTone {
+  switch (band) {
+    case 'low':
+      return 'success';
+    case 'high':
+      return 'danger';
+    case 'review':
+    default:
+      return 'warning';
+  }
 }
 
 /**
