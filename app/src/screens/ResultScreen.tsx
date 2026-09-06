@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 
 import { Badge, Button, Card, InfoRow, Screen, Text } from '../components';
 import { useCaptures } from '../context/CaptureContext';
+import { useScreening } from '../context/ScreeningContext';
 import { colors, radii, spacing, toneStyles } from '../theme';
 import { describeSimilarity, presentScreeningResult } from '../utils/statusPresentation';
 import type { RootStackScreenProps } from '../navigation/types';
@@ -11,6 +12,7 @@ import type { RootStackScreenProps } from '../navigation/types';
 export function ResultScreen({ navigation, route }: RootStackScreenProps<'Result'>) {
   const { result } = route.params;
   const { reset } = useCaptures();
+  const { reset: resetScreening } = useScreening();
 
   const presentation = presentScreeningResult(result);
   const tone = toneStyles(presentation.tone);
@@ -19,11 +21,13 @@ export function ResultScreen({ navigation, route }: RootStackScreenProps<'Result
 
   const startOver = () => {
     reset();
+    resetScreening();
     navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
   };
 
   const retry = () => {
     reset();
+    resetScreening();
     navigation.reset({
       index: 1,
       routes: [{ name: 'Home' }, { name: 'Capture', params: { slot: 'documentFront' } }],
@@ -134,6 +138,13 @@ export function ResultScreen({ navigation, route }: RootStackScreenProps<'Result
         {typeof result?.message === 'string' && result.message.trim().length > 0 ? (
           <Text variant="caption" tone="tertiary">
             Server note: {result.message.trim()}
+          </Text>
+        ) : null}
+        {/* Raw status is surfaced only when this app version cannot interpret
+            it, so an unrecognised outcome stays reportable rather than lost. */}
+        {presentation.outcome === 'inconclusive' && presentation.tone === 'neutral' ? (
+          <Text variant="caption" tone="tertiary">
+            Reported status: {String(result?.status ?? 'unknown')}
           </Text>
         ) : null}
       </Card>

@@ -6,15 +6,19 @@ import { Badge, Button, Card, Screen, Text } from '../components';
 import { APP_NAME, APP_TAGLINE, ORGANISATION, TRUST_POINTS } from '../constants/app';
 import { CAPTURE_SLOTS } from '../constants/captureSlots';
 import { useCaptures } from '../context/CaptureContext';
+import { useScreening } from '../context/ScreeningContext';
 import { colors, palette, radii, shadows, spacing } from '../theme';
 import type { RootStackScreenProps } from '../navigation/types';
 
 export function HomeScreen({ navigation }: RootStackScreenProps<'Home'>) {
   const { reset } = useCaptures();
+  const { reset: resetScreening } = useScreening();
 
   const startVerification = () => {
-    // Always begin from a clean slate so a previous run can't leak images.
+    // Always begin from a clean slate so a previous run can't leak images
+    // or show a stale result/error.
     reset();
+    resetScreening();
     navigation.navigate('Capture', { slot: 'documentFront' });
   };
 

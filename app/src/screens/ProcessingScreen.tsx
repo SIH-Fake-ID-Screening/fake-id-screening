@@ -1,45 +1,50 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import { ActivityIndicator, Animated, Easing, StyleSheet, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 
 import { Button, Card, Screen, Text } from '../components';
+import { useScreening } from '../context/ScreeningContext';
 import { colors, radii, spacing } from '../theme';
 import type { RootStackScreenProps } from '../navigation/types';
-import type { ScreeningResponse } from '../types/screening';
-
-/**
- * Dev-only sample payload so the result screen can be inspected before the
- * real API call is wired up in Milestone 4. Never used in a release build.
- */
-const DEV_PREVIEW_RESULT: ScreeningResponse = {
-  screening_id: '3fa85f64-5717-4562-b3fc-2c963f66afa6',
-  status: 'completed',
-  student: {
-    student_id: '202501100600212',
-    name: 'Priyanshu Ranjan',
-    course: 'B.Tech Information Technology',
-    college: 'KIET Group of Institutions',
-    dob: '2005-04-18',
-    valid_till: '2029-07-01',
-    status: 'active',
-    blacklisted: false,
-  },
-  face_verification: { match: true, confidence: 0.87 },
-  message: 'Face verification completed.',
-};
 
 /**
  * Shown while the submission is with the backend.
  *
- * Deliberately does NOT claim individual pipeline steps have finished — the
- * app has no visibility into backend progress, so it shows honest, general
- * status copy only.
+ * Deliberately does NOT claim individual pipeline steps have finished, and
+ * shows no percentage: `POST /api/v1/screen` is a single request/response
+ * call with no progress stream, so any staged progress bar would be fiction.
  *
- * MILESTONE 1: static loading state. The real upload request, timeout, error
- * and retry handling are added in Milestone 4.
+ * The request itself is owned by `ScreeningContext`. This screen only reacts
+ * to its outcome: forward to Result on success, back to Review on failure.
  */
 export function ProcessingScreen({ navigation }: RootStackScreenProps<'Processing'>) {
+  const { phase, result, cancel } = useScreening();
   const pulse = useRef(new Animated.Value(0)).current;
+
+  // Route once the real request settles. `replace` keeps Processing out of the
+  // back stack; a failure returns to Review, where the error and the captured
+  // images are still available for a retry.
+  useEffect(() => {
+    if (phase === 'succeeded' && result) {
+      navigation.replace('Result', { result });
+      return;
+    }
+
+    if (phase === 'failed') {
+      navigation.goBack();
+    }
+    // 'idle' / 'submitting' keep the honest waiting state on screen; the
+    // Cancel action is always available as an escape hatch.
+  }, [navigation, phase, result]);
+
+  const handleCancel = useCallback(() => {
+    cancel();
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.replace('Review');
+    }
+  }, [cancel, navigation]);
 
   useEffect(() => {
     const loop = Animated.loop(
@@ -70,22 +75,12 @@ export function ProcessingScreen({ navigation }: RootStackScreenProps<'Processin
       scroll={false}
       contentStyle={styles.content}
       footer={
-        <>
-          {__DEV__ ? (
-            <Button
-              label="Preview result screen (dev)"
-              variant="secondary"
-              size="md"
-              onPress={() => navigation.replace('Result', { result: DEV_PREVIEW_RESULT })}
-            />
-          ) : null}
-          <Button
-            label="Cancel"
-            variant="ghost"
-            onPress={() => navigation.goBack()}
-            accessibilityHint="Stops waiting and returns to the review screen"
-          />
-        </>
+        <Button
+          label="Cancel"
+          variant="ghost"
+          onPress={handleCancel}
+          accessibilityHint="Stops the screening request and returns to the review screen"
+        />
       }
     >
       <StatusBar style="dark" />

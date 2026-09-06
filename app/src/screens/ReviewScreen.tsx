@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Image } from 'expo-image';
@@ -6,7 +6,8 @@ import { Image } from 'expo-image';
 import { Badge, Button, Card, Screen, Text } from '../components';
 import { CAPTURE_SLOTS } from '../constants/captureSlots';
 import { useCaptures } from '../context/CaptureContext';
-import { colors, radii, spacing } from '../theme';
+import { useScreening } from '../context/ScreeningContext';
+import { colors, radii, spacing, toneStyles } from '../theme';
 import type { RootStackScreenProps } from '../navigation/types';
 
 /**
@@ -14,26 +15,56 @@ import type { RootStackScreenProps } from '../navigation/types';
  *
  * Lists the three slots with their state, a thumbnail of the captured image
  * and per-slot retake actions. Images come straight from `CaptureContext`
- * (local cache URIs produced by the camera step) — nothing is uploaded here.
+ * (local cache URIs produced by the camera step).
+ *
+ * Submitting starts the real `POST /api/v1/screen` upload. The request is
+ * owned by `ScreeningContext`, so moving to the Processing screen does not
+ * interrupt it, and a failed attempt can be retried from here with the same
+ * images — no recapture needed.
  */
 export function ReviewScreen({ navigation }: RootStackScreenProps<'Review'>) {
   const { captures, isComplete, completedCount } = useCaptures();
+  const { submit, isSubmitting, error, isConfigured, phase } = useScreening();
+
+  const hasFailed = phase === 'failed' && error !== null;
+  const dangerTone = toneStyles('danger');
+
+  const startVerification = useCallback(() => {
+    if (isSubmitting || !isComplete) return;
+
+    // Fire the upload, then show the shared processing screen. The promise is
+    // intentionally not awaited here: its outcome is read from context by the
+    // Processing screen, which is what advances to Result.
+    void submit();
+    navigation.navigate('Processing');
+  }, [isComplete, isSubmitting, navigation, submit]);
+
+  const submitLabel = isSubmitting
+    ? 'Submitting…'
+    : hasFailed
+      ? 'Try verification again'
+      : 'Start Verification';
 
   return (
     <Screen
       footer={
         <>
           <Button
-            label="Start Verification"
-            icon="🔍"
-            disabled={!isComplete}
-            onPress={() => navigation.navigate('Processing')}
+            label={submitLabel}
+            icon={hasFailed ? '↻' : '🔍'}
+            disabled={!isComplete || !isConfigured}
+            loading={isSubmitting}
+            onPress={startVerification}
             accessibilityHint="Uploads the three photos for screening"
           />
           <Text variant="caption" tone="tertiary" center>
-            {isComplete
-              ? 'Your photos are sent over a secure connection for screening.'
-              : `${completedCount} of ${CAPTURE_SLOTS.length} photos captured.`}
+            {!isConfigured
+              ? 'No screening server is configured, so submission is disabled.'
+              : isSubmitting
+                ? 'Uploading your photos — keep the app open.'
+                : isComplete
+                  ? 'Your photos are sent over a secure connection for screening.'
+                  : `${completedCount} of ${CAPTURE_SLOTS.length} photos captured.`}
           </Text>
         </>
       }
@@ -46,6 +77,45 @@ export function ReviewScreen({ navigation }: RootStackScreenProps<'Review'>) {
           Check each photo is clear and readable. You can retake any of them before submitting.
         </Text>
       </View>
+
+      {/* Misconfiguration is shown up front so the disabled button is explained. */}
+      {!isConfigured ? (
+        <View
+          style={[
+            styles.notice,
+            { backgroundColor: dangerTone.bg, borderColor: dangerTone.border },
+          ]}
+        >
+          <Text variant="label" style={{ color: dangerTone.fg }}>
+            Screening server not configured
+          </Text>
+          <Text variant="caption" style={{ color: dangerTone.fg }}>
+            Set EXPO_PUBLIC_API_BASE_URL to the address of the screening backend and restart the
+            app. See app/README.md for local setup.
+          </Text>
+        </View>
+      ) : null}
+
+      {/* Last failure, kept visible so the user can retry deliberately. */}
+      {hasFailed && error ? (
+        <View
+          style={[
+            styles.notice,
+            { backgroundColor: dangerTone.bg, borderColor: dangerTone.border },
+          ]}
+          accessibilityRole="alert"
+        >
+          <Text variant="label" style={{ color: dangerTone.fg }}>
+            Verification could not be completed
+          </Text>
+          <Text variant="caption" style={{ color: dangerTone.fg }}>
+            {error.message}
+          </Text>
+          <Text variant="caption" style={{ color: dangerTone.fg }}>
+            Your photos have been kept — you can submit again without retaking them.
+          </Text>
+        </View>
+      ) : null}
 
       <View style={styles.list}>
         {CAPTURE_SLOTS.map((meta) => {
@@ -93,6 +163,7 @@ export function ReviewScreen({ navigation }: RootStackScreenProps<'Review'>) {
                 label={captured ? 'Retake this photo' : 'Capture now'}
                 variant="secondary"
                 size="md"
+                disabled={isSubmitting}
                 onPress={() => navigation.navigate('Capture', { slot: meta.slot })}
               />
             </Card>
@@ -107,6 +178,13 @@ const styles = StyleSheet.create({
   intro: {
     gap: spacing.xs,
     marginBottom: spacing.xl,
+  },
+  notice: {
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    padding: spacing.lg,
+    gap: spacing.xs,
+    marginBottom: spacing.lg,
   },
   list: {
     gap: spacing.lg,
