@@ -8,7 +8,7 @@ import Badge from '../components/ui/Badge';
 import RiskMeter from '../components/ui/RiskMeter';
 import { getScreeningById } from '../services/api';
 import {
-  statusToDecision, statusToReason, formatTimestamp, riskColor
+  statusToDecision, statusToReason, formatTimestamp, riskColor, riskLevelColor
 } from '../services/screeningHelpers';
 
 const SectionCard = ({ title, icon: Icon, children }) => (
@@ -98,13 +98,29 @@ export default function ScreeningResult() {
   }
 
   // ---- Derive display values from backend fields ----
-  // `record` is a ScreeningResponse (fresh) or ScreeningRecordSchema (from DB)
+  // `record` is a ScreeningResponse (fresh) or ScreeningRecordSchema (from DB).
   const decision = statusToDecision(record.status);
-  const decisionColor = { Verified: 'var(--success)', Suspicious: 'var(--warning)', Rejected: 'var(--danger)' }[decision];
-  const DecisionIcon = { Verified: CheckCircle2, Suspicious: AlertTriangle, Rejected: XCircle }[decision];
+
+  // Map all four decisions to colors
+  const decisionColor = {
+    Verified: 'var(--success)',
+    Suspicious: 'var(--warning)',
+    Rejected: 'var(--danger)',
+    'Document Tampered': 'var(--danger)',
+  }[decision] ?? 'var(--danger)';
+
+  const DecisionIcon = {
+    Verified: CheckCircle2,
+    Suspicious: AlertTriangle,
+    Rejected: XCircle,
+    'Document Tampered': ShieldAlert,
+  }[decision] ?? XCircle;
 
   // Normalise face data — ScreeningResponse uses `face_verification`, DB record uses `face_result`
   const faceData = record.face_verification ?? record.face_result ?? null;
+
+  // Normalise tampering — ScreeningResponse uses `tampering`, DB record uses `tampering_result`
+  const tamperingData = record.tampering ?? record.tampering_result ?? null;
 
   // OCR data — ScreeningResponse doesn't carry ocr_result in the response body;
   // DB record stores it in `ocr_result` JSON.
@@ -116,10 +132,27 @@ export default function ScreeningResult() {
     || statusToReason(record.status, record.message);
 
   const timestamp = record.created_at ?? null;
+
+  // ── Risk score: use backend risk_score directly (0–100 integer/float).
+  // For fresh ScreeningResponse the score lives in tampering.front/back (not top-level);
+  // the DB record exposes risk_score at top level after being stored.
+  // We derive it from the most specific available source.
   const riskScore = record.risk_score ?? null;
+
+  // ── Risk level: use backend risk_level string directly.
+  const riskLevel = record.risk_level ?? null;
 
   // Student data from ScreeningResponse.student or DB db_verification_result
   const student = record.student ?? record.db_verification_result ?? null;
+
+  // ── Face confidence: backend returns 0–1 float (InsightFace cosine similarity).
+  // Clamp to [0,1] before multiplying by 100 for display — InsightFace can return ~1.0000001.
+  const rawConf = faceData?.confidence ?? null;
+  const faceConfidence01 = rawConf != null ? Math.min(1, Math.max(0, rawConf)) : null;
+  const faceConfidencePct = faceConfidence01 != null ? (faceConfidence01 * 100).toFixed(1) : null;
+
+  // Match status comes from backend field directly; NEVER derived from threshold
+  const faceMatch = faceData?.match ?? null;
 
   return (
     <div>
@@ -143,6 +176,7 @@ export default function ScreeningResult() {
 
       {/* Hero result banner */}
       <div className="result-hero" style={{ marginBottom: 24 }}>
+        {/* RiskMeter shows backend risk_score; falls back to 0 only when genuinely absent */}
         <RiskMeter score={riskScore ?? 0} />
 
         <div>
@@ -153,6 +187,19 @@ export default function ScreeningResult() {
             <DecisionIcon size={26} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 10 }} />
             {decision}
           </div>
+
+          {/* Risk level from backend */}
+          {riskLevel && (
+            <div style={{ marginTop: 6, fontSize: 13, fontWeight: 600, color: riskLevelColor(riskLevel) }}>
+              Risk Level: {riskLevel}
+              {riskScore != null && (
+                <span style={{ color: 'var(--text-muted)', fontWeight: 400, marginLeft: 6 }}>
+                  ({riskScore.toFixed != null ? riskScore.toFixed(1) : riskScore}/100)
+                </span>
+              )}
+            </div>
+          )}
+
           {timestamp && (
             <div className="result-id" style={{ marginTop: 8 }}>
               Screened: {formatTimestamp(timestamp)}
@@ -218,13 +265,14 @@ export default function ScreeningResult() {
           )}
         </SectionCard>
 
-        {/* Face Verification */}
+        {/* Face Verification — match driven by backend.face_verification.match only */}
         <SectionCard title="Face Verification" icon={Fingerprint}>
           {faceData ? (
             <>
               <DetailRow label="Match Result">
-                <span style={{ color: faceData.match ? 'var(--success)' : 'var(--danger)', fontWeight: 600, fontSize: 13 }}>
-                  {faceData.match ? '✓ Match Confirmed' : '✗ Mismatch'}
+                {/* Match status from backend.face_verification.match — no threshold logic */}
+                <span style={{ color: faceMatch ? 'var(--success)' : 'var(--danger)', fontWeight: 600, fontSize: 13 }}>
+                  {faceMatch === true ? '✓ Match Confirmed' : faceMatch === false ? '✗ Mismatch' : '— Unknown'}
                 </span>
               </DetailRow>
               <DetailRow label="Confidence Score">
@@ -233,17 +281,18 @@ export default function ScreeningResult() {
                     <div
                       className="confidence-fill"
                       style={{
-                        width: `${(faceData.confidence ?? 0) * 100}%`,
-                        background: (faceData.confidence ?? 0) >= 0.75 ? 'var(--success)' : 'var(--danger)',
+                        // confidence is 0–1 from backend; clamp applied above
+                        width: `${(faceConfidence01 ?? 0) * 100}%`,
+                        // bar color from backend match field, not confidence threshold
+                        background: faceMatch ? 'var(--success)' : 'var(--danger)',
                       }}
                     />
                   </div>
-                  <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, fontWeight: 700, color: (faceData.confidence ?? 0) >= 0.75 ? 'var(--success)' : 'var(--danger)' }}>
-                    {((faceData.confidence ?? 0) * 100).toFixed(0)}%
+                  <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, fontWeight: 700, color: faceMatch ? 'var(--success)' : 'var(--danger)' }}>
+                    {faceConfidencePct != null ? `${faceConfidencePct}%` : '—'}
                   </span>
                 </div>
               </DetailRow>
-              <DetailRow label="Threshold" value="75% minimum" />
             </>
           ) : (
             <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '8px 0' }}>
@@ -252,11 +301,77 @@ export default function ScreeningResult() {
           )}
         </SectionCard>
 
-        {/* Tampering — backend doesn't populate this yet; show N/A gracefully */}
+        {/* Tampering Detection — mapped from backend.tampering / backend.tampering_result */}
         <SectionCard title="Tampering Detection" icon={ShieldAlert}>
-          <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '8px 0' }}>
-            Tampering analysis not available for this record.
-          </div>
+          {tamperingData ? (
+            <>
+              {/* Overall tampering verdict */}
+              <DetailRow label="Overall Result">
+                <span style={{
+                  color: tamperingData.is_tampered ? 'var(--danger)' : 'var(--success)',
+                  fontWeight: 600, fontSize: 13,
+                }}>
+                  {tamperingData.is_tampered ? '⚠ Tampering Detected' : '✓ Document Appears Genuine'}
+                </span>
+              </DetailRow>
+
+              {/* Front side */}
+              {tamperingData.front && (
+                <>
+                  <DetailRow label="Front — Result">
+                    <span style={{
+                      color: tamperingData.front.tampered ? 'var(--danger)' : 'var(--success)',
+                      fontWeight: 600, fontSize: 13,
+                    }}>
+                      {tamperingData.front.tampered ? '⚠ Tampered' : '✓ Clean'}
+                    </span>
+                  </DetailRow>
+                  <DetailRow label="Front — Risk Score">
+                    <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, fontWeight: 700, color: riskColor(tamperingData.front.risk_score) }}>
+                      {tamperingData.front.risk_score != null
+                        ? `${Number(tamperingData.front.risk_score).toFixed(1)} / 100`
+                        : '—'}
+                    </span>
+                  </DetailRow>
+                  <DetailRow label="Front — Risk Level">
+                    <span style={{ color: riskLevelColor(tamperingData.front.risk_level), fontWeight: 600, fontSize: 13 }}>
+                      {tamperingData.front.risk_level ?? '—'}
+                    </span>
+                  </DetailRow>
+                </>
+              )}
+
+              {/* Back side */}
+              {tamperingData.back && (
+                <>
+                  <DetailRow label="Back — Result">
+                    <span style={{
+                      color: tamperingData.back.tampered ? 'var(--danger)' : 'var(--success)',
+                      fontWeight: 600, fontSize: 13,
+                    }}>
+                      {tamperingData.back.tampered ? '⚠ Tampered' : '✓ Clean'}
+                    </span>
+                  </DetailRow>
+                  <DetailRow label="Back — Risk Score">
+                    <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, fontWeight: 700, color: riskColor(tamperingData.back.risk_score) }}>
+                      {tamperingData.back.risk_score != null
+                        ? `${Number(tamperingData.back.risk_score).toFixed(1)} / 100`
+                        : '—'}
+                    </span>
+                  </DetailRow>
+                  <DetailRow label="Back — Risk Level">
+                    <span style={{ color: riskLevelColor(tamperingData.back.risk_level), fontWeight: 600, fontSize: 13 }}>
+                      {tamperingData.back.risk_level ?? '—'}
+                    </span>
+                  </DetailRow>
+                </>
+              )}
+            </>
+          ) : (
+            <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '8px 0' }}>
+              Tampering analysis was not performed for this screening.
+            </div>
+          )}
         </SectionCard>
       </div>
 

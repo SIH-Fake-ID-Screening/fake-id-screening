@@ -57,17 +57,24 @@ from schemas.screening import (
 )
 from utils.file_handler import validate_and_save, UPLOAD_DIR, delete_file
 from services import ocr_service, database_service, face_service
+from services.risk_service import compute_screening_risk
 from database.models import Screening
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["Screening"])
 
-def _save_and_return(db: Session, response: ScreeningResponse, ocr_result: dict = None) -> ScreeningResponse:
+def _save_and_return(
+    db: Session,
+    response: ScreeningResponse,
+    ocr_result: dict = None,
+    risk_result: dict = None,
+) -> ScreeningResponse:
     try:
-        risk_score = 10.0 if response.status == "completed" else 85.0
-        risk_level = "Low" if response.status == "completed" else "High"
-        
+        # Use the real risk engine output if provided; never hardcode.
+        risk_score = (risk_result or {}).get("risk_score", 50.0)
+        risk_level = (risk_result or {}).get("risk_level", "Medium")
+
         db_rec = Screening(
             screening_id=response.screening_id,
             student_id=response.student.student_id if response.student else None,
@@ -77,8 +84,8 @@ def _save_and_return(db: Session, response: ScreeningResponse, ocr_result: dict 
             ocr_result=ocr_result,
             db_verification_result=response.student.model_dump() if response.student else None,
             face_result=response.face_verification.model_dump() if response.face_verification else None,
-            tampering_result=None,
-            validation_issues={"message": response.message}
+            tampering_result=response.tampering.model_dump() if getattr(response, "tampering", None) else None,
+            validation_issues={"message": response.message},
         )
         db.add(db_rec)
         db.commit()
@@ -216,13 +223,20 @@ async def screen_document(
 
         if not student_id:
             logger.warning("[id=%s] OCR returned no student_id", screening_id)
+            # Compute risk for the early-exit path (no student, no face, no tampering)
+            early_risk = compute_screening_risk(
+                ocr_result=ocr_result,
+                student=None,
+                face_result=None,
+                tampering_result=None,
+            )
             return _save_and_return(db, ScreeningResponse(
                 screening_id=screening_id,
                 status="student_not_found",
                 student=None,
                 face_verification=None,
                 message="OCR could not extract a student ID from the document.",
-            ), ocr_result)
+            ), ocr_result, early_risk)
 
         # ------------------------------------------------------------------
         # STEP 6: Database lookup
@@ -236,13 +250,19 @@ async def screen_document(
             logger.warning(
                 "[id=%s] student_id=%r not found in database", screening_id, student_id
             )
+            early_risk = compute_screening_risk(
+                ocr_result=ocr_result,
+                student=None,
+                face_result=None,
+                tampering_result=None,
+            )
             return _save_and_return(db, ScreeningResponse(
                 screening_id=screening_id,
                 status="student_not_found",
                 student=None,
                 face_verification=None,
                 message=f"No student record found for ID: {student_id}",
-            ), ocr_result)
+            ), ocr_result, early_risk)
 
         student_summary = {
             "student_id": student.student_id,
@@ -427,32 +447,86 @@ async def screen_document(
             ) from exc
 
         # ------------------------------------------------------------------
-        # STEP 13: Build final response
+        # STEP 13: Tampering Analysis
         # ------------------------------------------------------------------
-        outcome_status = "completed" if face_result["match"] else "face_mismatch"
+        from services.tamper_service import check_tampering
+
+        logger.info("[id=%s] Starting tampering analysis for front and back images", screening_id)
+        
+        try:
+            front_tampering = check_tampering(document_front_path)
+            back_tampering = check_tampering(document_back_path)
+            
+            tampering_summary = {
+                "front": {
+                    "tampered": front_tampering.get("tampered", False),
+                    "risk_score": front_tampering.get("risk_score", 0.0),
+                    "risk_level": front_tampering.get("risk_level", "Low"),
+                    "confidence": front_tampering.get("confidence", 0.0),
+                },
+                "back": {
+                    "tampered": back_tampering.get("tampered", False),
+                    "risk_score": back_tampering.get("risk_score", 0.0),
+                    "risk_level": back_tampering.get("risk_level", "Low"),
+                    "confidence": back_tampering.get("confidence", 0.0),
+                },
+                "is_tampered": front_tampering.get("tampered", False) or back_tampering.get("tampered", False)
+            }
+        except Exception as e:
+            logger.error("[id=%s] Tampering analysis failed: %s", screening_id, e)
+            tampering_summary = None
+
+        # ------------------------------------------------------------------
+        # STEP 15: Final combined risk score
+        # ------------------------------------------------------------------
+        risk_result = compute_screening_risk(
+            ocr_result=ocr_result,
+            student=student_summary,
+            face_result={
+                "match": face_result["match"],
+                "confidence": face_result.get("confidence", 0.0),
+            },
+            tampering_result=tampering_summary,
+        )
+
+        # Use the risk engine's status determination as the authoritative outcome.
+        # The engine already encodes all critical overrides (tampered, mismatch, etc.).
+        outcome_status = risk_result["status"]
 
         logger.info(
-            "Screening complete [id=%s] status=%s match=%s confidence=%.4f",
+            "Screening complete [id=%s] status=%s risk=%.1f level=%s match=%s confidence=%.4f flags=%s",
             screening_id,
             outcome_status,
+            risk_result["risk_score"],
+            risk_result["risk_level"],
             face_result["match"],
             face_result.get("confidence", 0.0),
+            risk_result["critical_flags"],
         )
+
+        # Generate final message based on outcome status
+        if outcome_status in ("face_mismatch", "rejected"):
+            final_message = "Face verification failed. Identity could not be confirmed."
+        elif outcome_status == "document_tampered":
+            final_message = "Face verification completed. Identity confirmed. Document tampering was detected."
+        elif outcome_status == "suspicious":
+            final_message = "Face verification completed. Identity confirmed. Suspicious document or identity inconsistencies were detected."
+        else:
+            final_message = "Face verification completed. Identity confirmed. Document appears genuine."
 
         return _save_and_return(db, ScreeningResponse(
             screening_id=screening_id,
             status=outcome_status,
+            risk_score=risk_result.get("risk_score"),
+            risk_level=risk_result.get("risk_level"),
             student=student_summary,
             face_verification={
                 "match": face_result["match"],
                 "confidence": face_result.get("confidence", 0.0),
             },
-            message=(
-                "Face verification completed. Identity confirmed."
-                if face_result["match"]
-                else "Face verification completed. Identity NOT confirmed (mismatch)."
-            ),
-        ), ocr_result)
+            tampering=tampering_summary,
+            message=final_message,
+        ), ocr_result, risk_result)
 
     except HTTPException:
         # Re-raise validation errors (already have correct status codes).

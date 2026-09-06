@@ -5,7 +5,6 @@ const ROUTE_LABELS = {
   '/dashboard': 'Dashboard',
   '/screening/new': 'New Screening',
   '/screening/history': 'Screening History',
-  '/settings': 'Settings',
 };
 
 function getLabel(pathname) {

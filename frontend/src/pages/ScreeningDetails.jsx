@@ -2,13 +2,13 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import {
   ArrowLeft, AlertTriangle, Download,
-  Calendar, ShieldCheck, Cpu, Loader, CheckCircle2
+  Calendar, ShieldCheck, Cpu, Loader, CheckCircle2, ShieldAlert
 } from 'lucide-react';
 import Badge from '../components/ui/Badge';
 import RiskMeter from '../components/ui/RiskMeter';
 import { getScreeningById } from '../services/api';
 import {
-  statusToDecision, statusToReason, formatTimestamp, riskColor
+  statusToDecision, statusToReason, formatTimestamp, riskColor, riskLevelColor
 } from '../services/screeningHelpers';
 
 const Row = ({ label, value, mono }) => (
@@ -85,12 +85,24 @@ export default function ScreeningDetails() {
 
   // ---- Derive display values ----
   const decision = statusToDecision(s.status);
-  const decisionColor = { Verified: 'var(--success)', Suspicious: 'var(--warning)', Rejected: 'var(--danger)' }[decision];
+  const decisionColor = {
+    Verified: 'var(--success)',
+    Suspicious: 'var(--warning)',
+    Rejected: 'var(--danger)',
+    'Document Tampered': 'var(--danger)',
+  }[decision] ?? 'var(--danger)';
 
   const faceData = s.face_result ?? null;
   const ocrData = s.ocr_result ?? null;
   const student = s.db_verification_result ?? null;
+  // Tampering: DB stores it in tampering_result; fresh response uses tampering
+  const tamperingData = s.tampering_result ?? s.tampering ?? null;
   const issueMsg = s.validation_issues?.message || statusToReason(s.status, null);
+
+  // Face confidence: clamp to [0,1] then multiply by 100 for display
+  const rawConf = faceData?.confidence ?? null;
+  const faceConf01 = rawConf != null ? Math.min(1, Math.max(0, rawConf)) : null;
+  const faceConfPct = faceConf01 != null ? (faceConf01 * 100).toFixed(0) : null;
 
   return (
     <div>
@@ -179,14 +191,76 @@ export default function ScreeningDetails() {
                 <>
                   <Row
                     label="Face Match"
-                    value={`${faceData.match ? '✓ Match' : '✗ Mismatch'} — ${((faceData.confidence ?? 0) * 100).toFixed(0)}%`}
+                    value={faceData.match ? '✓ Match Confirmed' : '✗ Mismatch'}
                   />
-                  <Row label="Confidence" value={`${((faceData.confidence ?? 0) * 100).toFixed(0)}%`} mono />
+                  <Row label="Confidence" value={faceConfPct != null ? `${faceConfPct}%` : '—'} mono />
                 </>
               ) : (
                 <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '8px 0' }}>Skipped</div>
               )}
             </div>
+          </div>
+
+          {/* Tampering Detection */}
+          <div className="card" style={{ marginTop: 16 }}>
+            <div className="card-title" style={{ marginBottom: 14 }}>
+              <ShieldAlert size={15} color="var(--accent-blue-light)" /> Tampering Detection
+            </div>
+            {tamperingData ? (
+              <>
+                {/* Overall */}
+                <Row
+                  label="Overall Result"
+                  value={tamperingData.is_tampered ? '⚠ Tampering Detected' : '✓ Document Appears Genuine'}
+                />
+
+                {/* Front side */}
+                {tamperingData.front && (
+                  <>
+                    <Row
+                      label="Front — Result"
+                      value={tamperingData.front.tampered ? '⚠ Tampered' : '✓ Clean'}
+                    />
+                    <Row
+                      label="Front — Risk Score"
+                      value={tamperingData.front.risk_score != null
+                        ? `${Number(tamperingData.front.risk_score).toFixed(1)} / 100`
+                        : '—'}
+                      mono
+                    />
+                    <Row
+                      label="Front — Risk Level"
+                      value={tamperingData.front.risk_level ?? '—'}
+                    />
+                  </>
+                )}
+
+                {/* Back side */}
+                {tamperingData.back && (
+                  <>
+                    <Row
+                      label="Back — Result"
+                      value={tamperingData.back.tampered ? '⚠ Tampered' : '✓ Clean'}
+                    />
+                    <Row
+                      label="Back — Risk Score"
+                      value={tamperingData.back.risk_score != null
+                        ? `${Number(tamperingData.back.risk_score).toFixed(1)} / 100`
+                        : '—'}
+                      mono
+                    />
+                    <Row
+                      label="Back — Risk Level"
+                      value={tamperingData.back.risk_level ?? '—'}
+                    />
+                  </>
+                )}
+              </>
+            ) : (
+              <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '8px 0' }}>
+                Tampering analysis was not performed for this screening.
+              </div>
+            )}
           </div>
         </div>
 

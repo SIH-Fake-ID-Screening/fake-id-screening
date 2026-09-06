@@ -8,7 +8,7 @@ front_image_path and back_image_path store only the filesystem path to the stude
 no binary image data is kept in the database.
 """
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from sqlalchemy import Boolean, Column, Date, DateTime, String, Text, Float as db_Float
 from sqlalchemy.dialects.postgresql import UUID, JSONB as db_JSONB
 import uuid
@@ -65,13 +65,13 @@ class Student(Base):
     status = Column(String(50), nullable=False, default="active")
     blacklisted = Column(Boolean, nullable=False, default=False)
 
-    # Audit timestamps
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    # Audit timestamps — stored as UTC-aware; serialised with +00:00 suffix.
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(
-        DateTime,
+        DateTime(timezone=True),
         nullable=False,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
     )
 
     def __repr__(self) -> str:
@@ -119,7 +119,7 @@ class Screening(Base):
     face_result = Column(db_JSONB, nullable=True)
     tampering_result = Column(db_JSONB, nullable=True)
     validation_issues = Column(db_JSONB, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), index=True)
 
     def __repr__(self) -> str:
         return f"<Screening screening_id={self.screening_id!r} status={self.status!r}>"

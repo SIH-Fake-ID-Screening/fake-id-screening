@@ -37,6 +37,21 @@ class FaceVerificationResult(BaseModel):
     )
 
 
+class TamperingSideResult(BaseModel):
+    """Result of tampering analysis for a single side."""
+    tampered: bool
+    risk_score: float
+    risk_level: str
+    confidence: float
+
+
+class TamperingSummary(BaseModel):
+    """Summary of tampering analysis for both sides."""
+    front: Optional[TamperingSideResult] = None
+    back: Optional[TamperingSideResult] = None
+    is_tampered: bool
+
+
 # ---------------------------------------------------------------------------
 # Primary response schema for POST /api/v1/screen
 # ---------------------------------------------------------------------------
@@ -67,6 +82,14 @@ class ScreeningResponse(BaseModel):
         description="Pipeline outcome status.",
         examples=["completed", "student_not_found", "student_blacklisted"],
     )
+    risk_score: Optional[float] = Field(
+        default=None,
+        description="Combined risk score (0-100).",
+    )
+    risk_level: Optional[str] = Field(
+        default=None,
+        description="Risk level (Low/Medium/High/Critical).",
+    )
     student: Optional[StudentSummary] = Field(
         default=None,
         description="Student record from the database (None if not found).",
@@ -74,6 +97,10 @@ class ScreeningResponse(BaseModel):
     face_verification: Optional[FaceVerificationResult] = Field(
         default=None,
         description="Face verification result (None if check was skipped or failed).",
+    )
+    tampering: Optional[TamperingSummary] = Field(
+        default=None,
+        description="Tampering analysis result (None if check was skipped).",
     )
     message: str = Field(
         ...,
