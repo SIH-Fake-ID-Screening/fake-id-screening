@@ -180,7 +180,7 @@ def extract_document(image_path: Union[str, List[str]]) -> Dict[str, str]:
 
     processor = OCRProcessor()
     result = processor.process_image(image_path)
-    return _to_contract_dict(result.fields)
+    return _to_contract_dict(result)
 
 
 # Backward-compatible alias
