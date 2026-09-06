@@ -2,7 +2,7 @@
 ai/ocr/ocr_pipeline.py
 ----------------------
 Core PaddleOCR pipeline implementation for PaddleOCR 2.9.1.
-Loads model lazily (singleton pattern), executes text detection/recognition,
+Loads model lazily (singleton pattern), executes multi-pass text detection/recognition,
 runs field extraction, and compiles output schema.
 """
 
@@ -11,7 +11,7 @@ import logging
 from typing import Optional, Dict, Any, List, Union
 import numpy as np
 
-from .preprocessing import preprocess_image
+from .preprocessing import preprocess_image, crop_bottom_id_roi
 from .field_extractor import FieldExtractor
 from .schemas import OCRResult, ExtractedFields, ConfidenceScores, BoundingBox
 
@@ -62,35 +62,25 @@ class OCRProcessor:
         if not os.path.exists(image_path):
             raise FileNotFoundError(f"Image path does not exist: {image_path}")
 
-        # 1. Preprocess image
+        # 1. Preprocess image & ROI crop
         original_img, preprocessed_img = preprocess_image(image_path)
+        roi_img = crop_bottom_id_roi(original_img)
 
-        # 2. Execute PaddleOCR with defensive result parsing
+        # 2. Execute PaddleOCR multi-pass detection
         raw_boxes: List[BoundingBox] = []
+        seen_texts = set()
+
         if self._ocr_engine is not None:
-            try:
-                # Run OCR on preprocessed image
-                ocr_output = self._ocr_engine.ocr(preprocessed_img, cls=True)
+            # Pass A: Preprocessed image
+            self._run_ocr_pass(preprocessed_img, raw_boxes, seen_texts)
 
-                # Fallback to original image if preprocessed yields no text
-                if not ocr_output or ocr_output[0] is None:
-                    ocr_output = self._ocr_engine.ocr(original_img, cls=True)
+            # Pass B: Original image if preprocessed yields few boxes
+            if len(raw_boxes) < 3:
+                self._run_ocr_pass(original_img, raw_boxes, seen_texts)
 
-                # Defensive check: verify ocr_output and ocr_output[0] are non-empty
-                if ocr_output and ocr_output[0] is not None and isinstance(ocr_output[0], list):
-                    for line in ocr_output[0]:
-                        if not line or len(line) < 2:
-                            continue
-                        box_coords = line[0]  # [[x1, y1], [x2, y2], [x3, y3], [x4, y4]]
-                        text_val, conf_val = line[1]  # ("TEXT", 0.98)
-
-                        raw_boxes.append(BoundingBox(
-                            text=str(text_val).strip(),
-                            confidence=float(conf_val),
-                            box=[[float(pt[0]), float(pt[1])] for pt in box_coords]
-                        ))
-            except Exception as exc:
-                logger.error("Error during PaddleOCR inference on image '%s': %s", image_path, exc)
+            # Pass C: Bottom ROI cropped image for high-precision digit recognition
+            if roi_img is not None:
+                self._run_ocr_pass(roi_img, raw_boxes, seen_texts)
 
         # 3. Concatenate raw text
         raw_text_parts = [b.text for b in raw_boxes]
@@ -100,22 +90,39 @@ class OCRProcessor:
         extractor = FieldExtractor()
         extracted_fields, field_scores = extractor.extract_fields(raw_boxes, full_raw_text)
 
-        # 5. Compute overall confidence score
-        overall_confidence = 0.0
-        if raw_boxes:
-            overall_confidence = float(np.mean([b.confidence for b in raw_boxes]))
-
-        confidence_obj = ConfidenceScores(
-            overall=round(overall_confidence, 4),
-            field_scores={k: round(v, 4) for k, v in field_scores.items()}
-        )
-
         return OCRResult(
+            student_id=extracted_fields.student_id,
+            name=extracted_fields.name,
+            dob=extracted_fields.dob,
+            course=extracted_fields.course,
+            college=extracted_fields.college,
+            valid_till=extracted_fields.valid_till,
             raw_text=full_raw_text,
-            fields=extracted_fields,
-            confidence=confidence_obj,
+            confidence=field_scores,
             bounding_boxes=raw_boxes
         )
+
+    def _run_ocr_pass(self, img_np: np.ndarray, raw_boxes: List[BoundingBox], seen_texts: set):
+        """Execute single OCR pass and append unique detected text blocks."""
+        try:
+            ocr_output = self._ocr_engine.ocr(img_np, cls=True)
+            if ocr_output and ocr_output[0] is not None and isinstance(ocr_output[0], list):
+                for line in ocr_output[0]:
+                    if not line or len(line) < 2:
+                        continue
+                    box_coords = line[0]  # [[x1, y1], [x2, y2], [x3, y3], [x4, y4]]
+                    text_val, conf_val = line[1]  # ("TEXT", 0.98)
+                    clean_text = str(text_val).strip()
+
+                    if clean_text and clean_text not in seen_texts:
+                        seen_texts.add(clean_text)
+                        raw_boxes.append(BoundingBox(
+                            text=clean_text,
+                            confidence=float(conf_val),
+                            box=[[float(pt[0]), float(pt[1])] for pt in box_coords]
+                        ))
+        except Exception as exc:
+            logger.error("Error during OCR pass: %s", exc)
 
 
 def _to_contract_dict(fields) -> Dict[str, str]:
