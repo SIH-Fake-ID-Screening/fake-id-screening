@@ -1,0 +1,191 @@
+{
+  "image_path": "/Users/yuvrajpatel/Downloads/Gemini_Generated_Image_y36bsuy36bsuy36b.png",
+  "actual_label": "Unknown (Unlabeled Input)",
+  "tampered": true,
+  "risk_score": 46.06,
+  "risk_level": "HIGH",
+  "forensic_score": 36.13,
+  "metadata_score": 0.0,
+  "forensic_confidence": 0.58,
+  "channels": {
+    "ela": 0.0,
+    "srm": 42.78,
+    "reference": 49.63,
+    "copy_move": 0.0,
+    "metadata": 0.0
+  },
+  "tampered_zones": [
+    {
+      "zone": "father_line",
+      "deviation": 24.17,
+      "critical": true
+    },
+    {
+      "zone": "photo",
+      "deviation": 22.44,
+      "critical": true
+    },
+    {
+      "zone": "qr_code",
+      "deviation": 18.13,
+      "critical": true
+    },
+    {
+      "zone": "name_line",
+      "deviation": 16.39,
+      "critical": true
+    }
+  ],
+  "suspicious_regions_count": 5,
+  "regions": [
+    {
+      "region_id": 1,
+      "bbox": [
+        352,
+        509,
+        412,
+        374
+      ],
+      "area_pixels": 42443,
+      "peak_score": 99.56,
+      "mean_score": 47.36,
+      "aspect_ratio": 1.1,
+      "spatial_coherence": 0.33,
+      "zone": "name_line"
+    },
+    {
+      "region_id": 2,
+      "bbox": [
+        257,
+        1008,
+        72,
+        53
+      ],
+      "area_pixels": 2229,
+      "peak_score": 90.42,
+      "mean_score": 62.03,
+      "aspect_ratio": 1.36,
+      "spatial_coherence": 0.7,
+      "zone": "qr_code"
+    },
+    {
+      "region_id": 3,
+      "bbox": [
+        187,
+        1098,
+        143,
+        50
+      ],
+      "area_pixels": 5675,
+      "peak_score": 89.92,
+      "mean_score": 73.23,
+      "aspect_ratio": 2.86,
+      "spatial_coherence": 0.95,
+      "zone": "qr_code"
+    },
+    {
+      "region_id": 4,
+      "bbox": [
+        475,
+        457,
+        75,
+        44
+      ],
+      "area_pixels": 1247,
+      "peak_score": 88.48,
+      "mean_score": 49.7,
+      "aspect_ratio": 1.7,
+      "spatial_coherence": 0.45,
+      "zone": "photo"
+    },
+    {
+      "region_id": 5,
+      "bbox": [
+        518,
+        1215,
+        71,
+        19
+      ],
+      "area_pixels": 806,
+      "peak_score": 61.65,
+      "mean_score": 49.69,
+      "aspect_ratio": 3.74,
+      "spatial_coherence": 0.72,
+      "zone": "roll_number"
+    }
+  ],
+  "metadata_anomalies": [
+    "Structural layout deviation detected against genuine FRONT reference standard (Anomaly Score: 49.6%)",
+    "Card zone 'father_line' deviates from genuine reference standard (zone deviation: 24.2%) (security-critical zone)",
+    "Card zone 'photo' deviates from genuine reference standard (zone deviation: 22.4%) (security-critical zone)",
+    "Card zone 'qr_code' deviates from genuine reference standard (zone deviation: 18.1%) (security-critical zone)",
+    "Card zone 'name_line' deviates from genuine reference standard (zone deviation: 16.4%) (security-critical zone)"
+  ],
+  "diagnostics": {
+    "ela_score": 0.0,
+    "srm_score": 42.78,
+    "reference_score": 49.63,
+    "copy_move_score": 0.0,
+    "metadata_score_raw": 0.0,
+    "reference_boost": 9.93,
+    "max_region_score": 73.23,
+    "region_count_raw": 5,
+    "regional_boost": 8.41,
+    "score_spread_ela_srm": 42.78,
+    "agreement_factor": 0.572,
+    "has_region_signal_unused": true,
+    "document_detection": "full_frame_card",
+    "reference_match_details": {
+      "matched_reference_side": "front",
+      "reference_standard": "KIET Group of Institutions student ID (canonical genuine template)",
+      "reference_dimensions": [
+        985,
+        1599
+      ],
+      "alignment_status": "homography_magsac+ecc",
+      "reference_deviation_score": 49.63,
+      "zone_deviation_scores": {
+        "header_brand": 9.1,
+        "photo": 22.44,
+        "name_line": 16.39,
+        "father_line": 24.17,
+        "course_line": 8.01,
+        "validity_line": 4.86,
+        "qr_code": 18.13,
+        "signature": 5.84,
+        "roll_number": 10.58
+      },
+      "flagged_zones": [
+        {
+          "zone": "father_line",
+          "deviation": 24.17,
+          "critical": true
+        },
+        {
+          "zone": "photo",
+          "deviation": 22.44,
+          "critical": true
+        },
+        {
+          "zone": "qr_code",
+          "deviation": 18.13,
+          "critical": true
+        },
+        {
+          "zone": "name_line",
+          "deviation": 16.39,
+          "critical": true
+        }
+      ],
+      "worst_zone": "father_line"
+    },
+    "forensic_confidence_heuristic": 0.58,
+    "pretrained_deep_learning_model_loaded": false
+  },
+  "output_files": {
+    "mask_path": "/Users/yuvrajpatel/Desktop/SIH/modules/tampering/results/Gemini_Generated_Image_y36bsuy36bsuy36b_mask.png",
+    "overlay_path": "/Users/yuvrajpatel/Desktop/SIH/modules/tampering/results/Gemini_Generated_Image_y36bsuy36bsuy36b_overlay.png",
+    "heatmap_path": "/Users/yuvrajpatel/Desktop/SIH/modules/tampering/results/Gemini_Generated_Image_y36bsuy36bsuy36b_heatmap.png",
+    "report_path": "/Users/yuvrajpatel/Desktop/SIH/modules/tampering/results/Gemini_Generated_Image_y36bsuy36bsuy36b_report.json"
+  }
+}
